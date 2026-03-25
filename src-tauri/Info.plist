@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>GhostWriter needs microphone access to record your voice for transcription.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>GhostWriter needs speech recognition access.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>GhostWriter needs to control other applications to type text for you.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>GhostWriter needs access to control system audio for the auto-mute feature.</string>
+</dict>
+</plist>

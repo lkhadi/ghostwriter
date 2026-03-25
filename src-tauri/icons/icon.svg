@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Gradient for ghost body -->
+    <linearGradient id="ghostGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f8f9fa;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#e9ecef;stop-opacity:1" />
+    </linearGradient>
+
+    <!-- Gradient for microphone -->
+    <linearGradient id="micGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#6c757d;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#495057;stop-opacity:1" />
+    </linearGradient>
+
+    <!-- Accent gradient -->
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#20c997;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#12b886;stop-opacity:1" />
+    </linearGradient>
+
+    <!-- Glow filter -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Shadow -->
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="12" flood-color="#000" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="512" cy="512" r="480" fill="#212529"/>
+
+  <!-- Sound waves - left -->
+  <g opacity="0.6">
+    <path d="M180 400 Q140 512 180 624" fill="none" stroke="url(#accentGrad)" stroke-width="16" stroke-linecap="round"/>
+    <path d="M240 360 Q180 512 240 664" fill="none" stroke="url(#accentGrad)" stroke-width="16" stroke-linecap="round"/>
+  </g>
+
+  <!-- Sound waves - right -->
+  <g opacity="0.6">
+    <path d="M844 400 Q884 512 844 624" fill="none" stroke="url(#accentGrad)" stroke-width="16" stroke-linecap="round"/>
+    <path d="M784 360 Q844 512 784 664" fill="none" stroke="url(#accentGrad)" stroke-width="16" stroke-linecap="round"/>
+  </g>
+
+  <!-- Ghost body -->
+  <g filter="url(#shadow)">
+    <!-- Main ghost shape -->
+    <path d="M512 180
+             C380 180 300 280 300 440
+             L300 600
+             Q300 620 310 620
+             Q320 620 320 600
+             L320 520
+             Q320 500 340 500
+             Q360 500 360 520
+             L360 580
+             Q360 600 380 600
+             Q400 600 400 580
+             L400 440
+             C400 300 450 240 512 240
+             C574 240 624 300 624 440
+             L624 580
+             Q624 600 644 600
+             Q664 600 664 580
+             L664 520
+             Q664 500 684 500
+             Q704 500 704 520
+             L704 600
+             Q704 620 714 620
+             Q724 620 724 600
+             L724 440
+             C724 280 644 180 512 180
+             Z"
+          fill="url(#ghostGrad)"/>
+
+    <!-- Ghost eyes -->
+    <ellipse cx="440" cy="360" rx="50" ry="60" fill="#212529"/>
+    <ellipse cx="584" cy="360" rx="50" ry="60" fill="#212529"/>
+
+    <!-- Eye shine -->
+    <ellipse cx="455" cy="345" rx="15" ry="20" fill="#fff" opacity="0.8"/>
+    <ellipse cx="599" cy="345" rx="15" ry="20" fill="#fff" opacity="0.8"/>
+  </g>
+
+  <!-- Microphone element - integrated into ghost -->
+  <g filter="url(#glow)">
+    <!-- Mic stand curve -->
+    <path d="M512 500 Q512 550 512 580"
+          fill="none"
+          stroke="url(#micGrad)"
+          stroke-width="20"
+          stroke-linecap="round"/>
+
+    <!-- Mic head -->
+    <rect x="472" y="340" width="80" height="140" rx="40" ry="40" fill="url(#micGrad)"/>
+
+    <!-- Mic grille lines -->
+    <g stroke="#6c757d" stroke-width="2" opacity="0.5">
+      <line x1="490" y1="360" x2="490" y2="460"/>
+      <line x1="512" y1="360" x2="512" y2="460"/>
+      <line x1="534" y1="360" x2="534" y2="460"/>
+    </g>
+
+    <!-- Mic highlight -->
+    <ellipse cx="512" cy="380" rx="25" ry="35" fill="#adb5bd" opacity="0.4"/>
+  </g>
+
+  <!-- Pen/quill accent -->
+  <g transform="rotate(-30, 700, 350)">
+    <path d="M680 280 L720 380 L740 370 L700 270 Z" fill="url(#accentGrad)"/>
+    <path d="M720 380 L725 390 L715 395 L710 385 Z" fill="#fff"/>
+  </g>
+
+  <!-- Subtle sparkle accents -->
+  <g fill="#20c997" opacity="0.8">
+    <circle cx="280" cy="280" r="8"/>
+    <circle cx="320" cy="240" r="5"/>
+    <circle cx="744" cy="240" r="8"/>
+    <circle cx="704" cy="280" r="5"/>
+  </g>
+</svg>
