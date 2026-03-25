@@ -1,4 +1,4 @@
-#![allow(unexpected_cfgs, deprecated)]
+use crate::screen_info;
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
@@ -6,11 +6,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::time::Duration;
-
-use cocoa::base::id;
-use cocoa::foundation::NSRect;
-use objc::msg_send;
-use objc::{sel, sel_impl};
 
 const SOCKET_PATH: &str = "/tmp/ghostwriter_overlay.sock";
 
@@ -122,8 +117,8 @@ impl OverlayHelper {
 
     pub fn show_centered_bottom(&self) -> Result<(), String> {
         // Calculate center position near bottom of screen
-        let screen_width = Self::get_screen_width();
-        let screen_height = Self::get_screen_height();
+        let screen_width = screen_info::get_screen_width();
+        let screen_height = screen_info::get_screen_height();
 
         // Overlay dimensions
         let overlay_width = 220;
@@ -134,42 +129,6 @@ impl OverlayHelper {
         let y = screen_height - overlay_height - 100;
 
         self.send_command(&format!("SHOW {} {}", x, y))
-    }
-
-    fn get_screen_width() -> i32 {
-        #[cfg(target_os = "macos")]
-        #[allow(unexpected_cfgs)]
-        unsafe {
-            #[allow(unexpected_cfgs)]
-            let screen_class = objc::runtime::Class::get("NSScreen").unwrap();
-            #[allow(unexpected_cfgs)]
-            let screen: id = msg_send![screen_class, mainScreen];
-            #[allow(unexpected_cfgs)]
-            let frame: NSRect = msg_send![screen, visibleFrame];
-
-            frame.size.width as i32
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        1920 // Fallback for other platforms
-    }
-
-    fn get_screen_height() -> i32 {
-        #[cfg(target_os = "macos")]
-        #[allow(unexpected_cfgs)]
-        unsafe {
-            #[allow(unexpected_cfgs)]
-            let screen_class = objc::runtime::Class::get("NSScreen").unwrap();
-            #[allow(unexpected_cfgs)]
-            let screen: id = msg_send![screen_class, mainScreen];
-            #[allow(unexpected_cfgs)]
-            let frame: NSRect = msg_send![screen, visibleFrame];
-
-            frame.size.height as i32
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        1080 // Fallback for other platforms
     }
 
     pub fn hide(&self) -> Result<(), String> {

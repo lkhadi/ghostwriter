@@ -4,6 +4,7 @@ mod audio_recorder;
 mod config;
 mod injector;
 mod logic_helper;
+mod screen_info;
 mod transcriber;
 
 #[cfg(target_os = "macos")]
