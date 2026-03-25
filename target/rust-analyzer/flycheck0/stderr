@@ -1,16 +1,102 @@
-   0.408196833s  INFO prepare_target{force=false package_id=tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri) target="tauri_appghostwriter_lib"}: cargo::core::compiler::fingerprint: stale: changed "/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri/src/lib.rs"
-   0.408385000s  INFO prepare_target{force=false package_id=tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri) target="tauri_appghostwriter_lib"}: cargo::core::compiler::fingerprint:           (vs) "/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri/target/debug/.fingerprint/tauri-appghostwriter-743ae64d3999b28a/dep-lib-tauri_appghostwriter_lib"
-   0.408389292s  INFO prepare_target{force=false package_id=tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri) target="tauri_appghostwriter_lib"}: cargo::core::compiler::fingerprint:                FileTime { seconds: 1774454938, nanos: 757694241 } < FileTime { seconds: 1774455099, nanos: 295864628 }
-   0.409028083s  INFO prepare_target{force=false package_id=tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri) target="tauri_appghostwriter_lib"}: cargo::core::compiler::fingerprint: fingerprint dirty for tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri)/Check { test: false }/TargetInner { ..: lib_target("tauri_appghostwriter_lib", ["staticlib", "cdylib", "rlib"], "/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri/src/lib.rs", Edition2021) }
-   0.409055875s  INFO prepare_target{force=false package_id=tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri) target="tauri_appghostwriter_lib"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleItem(ChangedFile { reference: "/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri/target/debug/.fingerprint/tauri-appghostwriter-743ae64d3999b28a/dep-lib-tauri_appghostwriter_lib", reference_mtime: FileTime { seconds: 1774454938, nanos: 757694241 }, stale: "/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri/src/lib.rs", stale_mtime: FileTime { seconds: 1774455099, nanos: 295864628 } }))
-   0.432795958s  INFO prepare_target{force=false package_id=tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri) target="tauri_appghostwriter_lib"}: cargo::core::compiler::fingerprint: stale: changed "/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri/src/lib.rs"
-   0.432806500s  INFO prepare_target{force=false package_id=tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri) target="tauri_appghostwriter_lib"}: cargo::core::compiler::fingerprint:           (vs) "/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri/target/debug/.fingerprint/tauri-appghostwriter-89277b08fc6f04ab/dep-test-lib-tauri_appghostwriter_lib"
-   0.432808792s  INFO prepare_target{force=false package_id=tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri) target="tauri_appghostwriter_lib"}: cargo::core::compiler::fingerprint:                FileTime { seconds: 1774454938, nanos: 757675783 } < FileTime { seconds: 1774455099, nanos: 295864628 }
-   0.433149042s  INFO prepare_target{force=false package_id=tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri) target="tauri_appghostwriter_lib"}: cargo::core::compiler::fingerprint: fingerprint dirty for tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri)/Check { test: true }/TargetInner { ..: lib_target("tauri_appghostwriter_lib", ["staticlib", "cdylib", "rlib"], "/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri/src/lib.rs", Edition2021) }
-   0.433158250s  INFO prepare_target{force=false package_id=tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri) target="tauri_appghostwriter_lib"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleItem(ChangedFile { reference: "/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri/target/debug/.fingerprint/tauri-appghostwriter-89277b08fc6f04ab/dep-test-lib-tauri_appghostwriter_lib", reference_mtime: FileTime { seconds: 1774454938, nanos: 757675783 }, stale: "/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri/src/lib.rs", stale_mtime: FileTime { seconds: 1774455099, nanos: 295864628 } }))
-   0.434944667s  INFO prepare_target{force=false package_id=tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri) target="tauri-appghostwriter"}: cargo::core::compiler::fingerprint: fingerprint dirty for tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri)/Check { test: false }/TargetInner { name: "tauri-appghostwriter", doc: true, ..: with_path("/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri/src/main.rs", Edition2021) }
-   0.434950667s  INFO prepare_target{force=false package_id=tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri) target="tauri-appghostwriter"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleDepFingerprint { name: "tauri_appghostwriter_lib" })
-   0.436360917s  INFO prepare_target{force=false package_id=tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri) target="tauri-appghostwriter"}: cargo::core::compiler::fingerprint: fingerprint dirty for tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri)/Check { test: true }/TargetInner { name: "tauri-appghostwriter", doc: true, ..: with_path("/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri/src/main.rs", Edition2021) }
-   0.436367625s  INFO prepare_target{force=false package_id=tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri) target="tauri-appghostwriter"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleDepFingerprint { name: "tauri_appghostwriter_lib" })
+   0.185320750s  INFO prepare_target{force=false package_id=tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri) target="tauri_appghostwriter_lib"}: cargo::core::compiler::fingerprint: fingerprint error for tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri)/Check { test: false }/TargetInner { ..: lib_target("tauri_appghostwriter_lib", ["staticlib", "cdylib", "rlib"], "/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri/src/lib.rs", Edition2021) }
+   0.185345500s  INFO prepare_target{force=false package_id=tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri) target="tauri_appghostwriter_lib"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri/target/debug/.fingerprint/tauri-appghostwriter-b81b3d24ebc24e1b/lib-tauri_appghostwriter_lib`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: std::backtrace::Backtrace::capture
+   2: cargo_util::paths::read_bytes
+   3: cargo_util::paths::read
+   4: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   5: cargo::core::compiler::fingerprint::prepare_target
+   6: cargo::core::compiler::compile
+   7: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   8: cargo::ops::cargo_compile::compile_ws
+   9: cargo::ops::cargo_compile::compile_with_exec
+  10: cargo::ops::cargo_compile::compile
+  11: cargo::commands::check::exec
+  12: <cargo::cli::Exec>::exec
+  13: cargo::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  15: std::rt::lang_start::<()>::{closure#0}
+  16: std::rt::lang_start_internal
+  17: _main
+   0.211864916s  INFO prepare_target{force=false package_id=tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri) target="tauri_appghostwriter_lib"}: cargo::core::compiler::fingerprint: fingerprint error for tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri)/Check { test: true }/TargetInner { ..: lib_target("tauri_appghostwriter_lib", ["staticlib", "cdylib", "rlib"], "/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri/src/lib.rs", Edition2021) }
+   0.211885500s  INFO prepare_target{force=false package_id=tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri) target="tauri_appghostwriter_lib"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri/target/debug/.fingerprint/tauri-appghostwriter-3dbd9a1ca983405b/test-lib-tauri_appghostwriter_lib`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: std::backtrace::Backtrace::capture
+   2: cargo_util::paths::read_bytes
+   3: cargo_util::paths::read
+   4: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   5: cargo::core::compiler::fingerprint::prepare_target
+   6: cargo::core::compiler::compile
+   7: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   8: cargo::ops::cargo_compile::compile_ws
+   9: cargo::ops::cargo_compile::compile_with_exec
+  10: cargo::ops::cargo_compile::compile
+  11: cargo::commands::check::exec
+  12: <cargo::cli::Exec>::exec
+  13: cargo::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  15: std::rt::lang_start::<()>::{closure#0}
+  16: std::rt::lang_start_internal
+  17: _main
+   0.213114291s  INFO prepare_target{force=false package_id=tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri) target="tauri-appghostwriter"}: cargo::core::compiler::fingerprint: fingerprint error for tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri)/Check { test: false }/TargetInner { name: "tauri-appghostwriter", doc: true, ..: with_path("/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri/src/main.rs", Edition2021) }
+   0.213120083s  INFO prepare_target{force=false package_id=tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri) target="tauri-appghostwriter"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri/target/debug/.fingerprint/tauri-appghostwriter-33ce4c6ff9546192/bin-tauri-appghostwriter`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: std::backtrace::Backtrace::capture
+   2: cargo_util::paths::read_bytes
+   3: cargo_util::paths::read
+   4: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   5: cargo::core::compiler::fingerprint::prepare_target
+   6: cargo::core::compiler::compile
+   7: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   8: cargo::ops::cargo_compile::compile_ws
+   9: cargo::ops::cargo_compile::compile_with_exec
+  10: cargo::ops::cargo_compile::compile
+  11: cargo::commands::check::exec
+  12: <cargo::cli::Exec>::exec
+  13: cargo::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  15: std::rt::lang_start::<()>::{closure#0}
+  16: std::rt::lang_start_internal
+  17: _main
+   0.214129041s  INFO prepare_target{force=false package_id=tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri) target="tauri-appghostwriter"}: cargo::core::compiler::fingerprint: fingerprint error for tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri)/Check { test: true }/TargetInner { name: "tauri-appghostwriter", doc: true, ..: with_path("/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri/src/main.rs", Edition2021) }
+   0.214133708s  INFO prepare_target{force=false package_id=tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri) target="tauri-appghostwriter"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri/target/debug/.fingerprint/tauri-appghostwriter-64d8e958ccf9e745/test-bin-tauri-appghostwriter`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: std::backtrace::Backtrace::capture
+   2: cargo_util::paths::read_bytes
+   3: cargo_util::paths::read
+   4: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   5: cargo::core::compiler::fingerprint::prepare_target
+   6: cargo::core::compiler::compile
+   7: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   8: cargo::ops::cargo_compile::compile_ws
+   9: cargo::ops::cargo_compile::compile_with_exec
+  10: cargo::ops::cargo_compile::compile
+  11: cargo::commands::check::exec
+  12: <cargo::cli::Exec>::exec
+  13: cargo::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  15: std::rt::lang_start::<()>::{closure#0}
+  16: std::rt::lang_start_internal
+  17: _main
     Checking tauri-appghostwriter v0.1.0 (/Users/lkhadi/docker/htdocs/systemTest/ghostwriter/src-tauri)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.57s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.98s
