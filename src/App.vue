@@ -12,6 +12,7 @@ const hotkey = ref("");
 const showDebug = ref(false);
 const logs = ref([]);
 const autoMuteEnabled = ref(true);
+const selectedLanguage = ref("en");
 
 // Add a log message
 const log = (msg) => {
@@ -28,6 +29,7 @@ onMounted(async () => {
     if (currentLabel.value === 'main') {
         loadHotkey();
         loadAutoMute();
+        loadLanguage();
     }
 });
 
@@ -66,6 +68,24 @@ async function saveAutoMute(enabled) {
     log("Auto-mute " + (enabled ? "enabled" : "disabled"));
   } catch (e) {
     log("Error saving auto-mute setting: " + e);
+  }
+}
+
+async function loadLanguage() {
+  try {
+    selectedLanguage.value = await invoke("get_language");
+    log("Loaded language: " + selectedLanguage.value);
+  } catch (e) {
+    log("Error loading language: " + e);
+  }
+}
+
+async function saveLanguage() {
+  try {
+    await invoke("set_language", { lang: selectedLanguage.value });
+    log("Saved language: " + selectedLanguage.value);
+  } catch (e) {
+    log("Error saving language: " + e);
   }
 }
 
@@ -136,6 +156,15 @@ async function checkPermissions() {
         <label>Global Hotkey</label>
         <HotkeyRecorder :initial-hotkey="hotkey" @update:hotkey="saveHotkey" />
         <p class="hint">Press hotkey to Start/Stop recording</p>
+      </div>
+
+      <div class="section">
+        <label>Recognition Language</label>
+        <select v-model="selectedLanguage" @change="saveLanguage" class="language-select">
+          <option value="en">English</option>
+          <option value="id">Bahasa Indonesia</option>
+        </select>
+        <p class="hint">Language for speech recognition</p>
       </div>
 
       <div class="section">
@@ -362,5 +391,26 @@ h1 {
 
 .debug-panel button:hover {
   background: rgba(255,255,255,0.2);
+}
+
+.language-select {
+  width: 100%;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  outline: none;
+}
+
+.language-select:focus {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.language-select option {
+  background: #1a1a1a;
+  color: #fff;
 }
 </style>
