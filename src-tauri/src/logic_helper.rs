@@ -1,7 +1,9 @@
 use crate::audio_control::unmute_system_audio;
+use crate::config::AppConfig;
 use crate::injector::Injector;
 use crate::AppState;
 use tauri::Manager;
+use tauri_plugin_store::StoreExt;
 
 pub fn stop_and_transcribe_logic(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
@@ -29,7 +31,17 @@ pub fn stop_and_transcribe_logic(app: tauri::AppHandle) {
             match state.transcriber.lock() {
                 Ok(transcriber_guard) => {
                     if let Some(transcriber) = transcriber_guard.as_ref() {
-                        match transcriber.transcribe(&audio, "en") {
+                        // Get language from config
+                        let language = {
+                            let store = app.store("config.json").ok();
+                            store
+                                .and_then(|s| s.get("config"))
+                                .and_then(|c| serde_json::from_value::<AppConfig>(c).ok())
+                                .map(|c| c.language)
+                                .unwrap_or_else(|| "en".to_string())
+                        };
+
+                        match transcriber.transcribe(&audio, &language) {
                             Ok(t) => t,
                             Err(e) => {
                                 eprintln!("Transcription error: {}", e);
