@@ -1,3 +1,5 @@
+#![allow(unexpected_cfgs, deprecated)]
+
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -5,12 +7,9 @@ use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::time::Duration;
 
-#[cfg(target_os = "macos")]
-use cocoa::appkit::{NSScreen, NSWindow};
-use cocoa::base::{id, nil};
+use cocoa::base::id;
 use cocoa::foundation::NSRect;
 use objc::msg_send;
-use objc::runtime::Object;
 use objc::{sel, sel_impl};
 
 const SOCKET_PATH: &str = "/tmp/ghostwriter_overlay.sock";
@@ -21,7 +20,7 @@ pub struct OverlayHelper {
 
 impl OverlayHelper {
     fn get_resource_path(rel_path: &str) -> PathBuf {
-        if let Some(exe_path) = std::env::current_exe().ok() {
+        if let Ok(exe_path) = std::env::current_exe() {
             if let Some(macos_dir) = exe_path.parent() {
                 if let Some(contents_dir) = macos_dir.parent() {
                     let resources_dir = contents_dir.join("Resources");
@@ -43,7 +42,7 @@ impl OverlayHelper {
             println!("Current dir: {}", dir.display());
         }
 
-        let helper_paths = vec![
+        let helper_paths = [
             // Production: bundled inside Resources/overlay-helper/ (no ../ traversal)
             Self::get_resource_path("overlay-helper/GhostWriterOverlayHelper.app/Contents/MacOS/GhostWriterOverlayHelper"),
             // Dev: relative to project working directory
@@ -59,7 +58,7 @@ impl OverlayHelper {
             println!("Checking path: {}, exists: {}", path_str, exists);
             if exists {
                 println!("Launching helper from: {}", path_str);
-                if Self::launch_helper(&helper_path).is_ok() {
+                if Self::launch_helper(helper_path).is_ok() {
                     launched = true;
                     break;
                 }
@@ -139,9 +138,13 @@ impl OverlayHelper {
 
     fn get_screen_width() -> i32 {
         #[cfg(target_os = "macos")]
+        #[allow(unexpected_cfgs)]
         unsafe {
+            #[allow(unexpected_cfgs)]
             let screen_class = objc::runtime::Class::get("NSScreen").unwrap();
+            #[allow(unexpected_cfgs)]
             let screen: id = msg_send![screen_class, mainScreen];
+            #[allow(unexpected_cfgs)]
             let frame: NSRect = msg_send![screen, visibleFrame];
 
             frame.size.width as i32
@@ -153,9 +156,13 @@ impl OverlayHelper {
 
     fn get_screen_height() -> i32 {
         #[cfg(target_os = "macos")]
+        #[allow(unexpected_cfgs)]
         unsafe {
+            #[allow(unexpected_cfgs)]
             let screen_class = objc::runtime::Class::get("NSScreen").unwrap();
+            #[allow(unexpected_cfgs)]
             let screen: id = msg_send![screen_class, mainScreen];
+            #[allow(unexpected_cfgs)]
             let frame: NSRect = msg_send![screen, visibleFrame];
 
             frame.size.height as i32

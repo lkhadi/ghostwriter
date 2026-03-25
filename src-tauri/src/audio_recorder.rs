@@ -39,7 +39,7 @@ impl AudioRecorder {
         let recording_arc = is_recording.clone();
 
         thread::spawn(move || {
-            let mut stream: Option<cpal::Stream> = None;
+            let mut _stream: Option<cpal::Stream> = None;
 
             while let Ok(cmd) = rx.recv() {
                 match cmd {
@@ -96,7 +96,7 @@ impl AudioRecorder {
                                                 if let Ok(resampled_waves) =
                                                     resampler.process(&input_buffer, None)
                                                 {
-                                                    if let Some(wave) = resampled_waves.get(0) {
+                                                    if let Some(wave) = resampled_waves.first() {
                                                         if let Ok(mut locked) = buf_ref.lock() {
                                                             // Ring buffer behavior:
                                                             // Remove oldest samples if at capacity
@@ -120,7 +120,7 @@ impl AudioRecorder {
 
                                     if let Ok(s) = stream_res {
                                         if s.play().is_ok() {
-                                            stream = Some(s);
+                                            _stream = Some(s);
                                             recording_arc.store(true, Ordering::SeqCst);
                                             println!(
                                                 "Recording started. Max buffer: {} samples ({} seconds)",
@@ -134,7 +134,7 @@ impl AudioRecorder {
                         }
                     }
                     AudioCommand::Stop => {
-                        stream = None; // Drop stream
+                        _stream = None; // Drop stream
                         recording_arc.store(false, Ordering::SeqCst);
                         println!("Recording stopped.");
                     }
@@ -156,53 +156,54 @@ impl AudioRecorder {
     /// Get all audio samples and clear the buffer.
     /// Returns samples in chronological order (oldest first).
     pub fn get_audio(&self) -> Vec<f32> {
-        if let Ok(mut buffer) = self.audio_buffer.lock() {
-            let len = buffer.len();
-            if len == 0 {
-                return Vec::new();
+        match self.audio_buffer.lock() {
+            Ok(mut buffer) => {
+                let len = buffer.len();
+                if len == 0 {
+                    return Vec::new();
+                }
+
+                // Log buffer usage
+                let usage_percent = (len as f64 / MAX_BUFFER_SAMPLES as f64) * 100.0;
+                let duration_secs = len / SAMPLE_RATE;
+                println!(
+                    "Audio buffer: {} samples ({} seconds, {:.1}% of max capacity)",
+                    len, duration_secs, usage_percent
+                );
+
+                if len >= MAX_BUFFER_SAMPLES {
+                    println!("WARNING: Buffer was at max capacity. Oldest audio was discarded.");
+                }
+
+                // Drain all samples from buffer (converts VecDeque to Vec)
+                let data: Vec<f32> = buffer.drain(..).collect();
+
+                // Buffer is now empty
+                println!("Buffer cleared after get_audio(). RAM freed.");
+
+                data
             }
-
-            // Log buffer usage
-            let usage_percent = (len as f64 / MAX_BUFFER_SAMPLES as f64) * 100.0;
-            let duration_secs = len / SAMPLE_RATE;
-            println!(
-                "Audio buffer: {} samples ({} seconds, {:.1}% of max capacity)",
-                len, duration_secs, usage_percent
-            );
-
-            if len >= MAX_BUFFER_SAMPLES {
-                println!("WARNING: Buffer was at max capacity. Oldest audio was discarded.");
+            _ => {
+                Vec::new() // Return empty if poisoned
             }
-
-            // Drain all samples from buffer (converts VecDeque to Vec)
-            let data: Vec<f32> = buffer.drain(..).collect();
-
-            // Buffer is now empty
-            println!("Buffer cleared after get_audio(). RAM freed.");
-
-            data
-        } else {
-            Vec::new() // Return empty if poisoned
         }
     }
 
     /// Returns the current buffer usage as a percentage (0.0 - 100.0)
     #[allow(dead_code)]
     pub fn buffer_usage_percent(&self) -> f64 {
-        if let Ok(buffer) = self.audio_buffer.lock() {
-            (buffer.len() as f64 / MAX_BUFFER_SAMPLES as f64) * 100.0
-        } else {
-            0.0
+        match self.audio_buffer.lock() {
+            Ok(buffer) => (buffer.len() as f64 / MAX_BUFFER_SAMPLES as f64) * 100.0,
+            _ => 0.0,
         }
     }
 
     /// Returns the current buffer duration in seconds
     #[allow(dead_code)]
     pub fn buffer_duration_seconds(&self) -> usize {
-        if let Ok(buffer) = self.audio_buffer.lock() {
-            buffer.len() / SAMPLE_RATE
-        } else {
-            0
+        match self.audio_buffer.lock() {
+            Ok(buffer) => buffer.len() / SAMPLE_RATE,
+            _ => 0,
         }
     }
 
