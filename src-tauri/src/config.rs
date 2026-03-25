@@ -5,6 +5,7 @@ use tauri_plugin_store::StoreExt;
 pub struct AppConfig {
     pub hotkey: String,
     pub auto_mute_enabled: bool,
+    pub language: String,
 }
 
 // Legacy config for migration
@@ -18,6 +19,7 @@ impl Default for AppConfig {
         Self {
             hotkey: "Cmd+Option+Space".to_string(),
             auto_mute_enabled: true,
+            language: "en".to_string(),
         }
     }
 }
@@ -43,6 +45,7 @@ pub fn init_store(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Erro
                     let new_config = AppConfig {
                         hotkey: old_config.hotkey,
                         auto_mute_enabled: true, // Default to enabled for existing users
+                        language: "en".to_string(), // Default for migrated users
                     };
                     store.set("config".to_string(), serde_json::to_value(new_config)?);
                     store.save()?;

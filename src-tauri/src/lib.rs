@@ -85,7 +85,8 @@ fn save_hotkey(app: tauri::AppHandle, hotkey: String) -> Result<(), String> {
 
     let config = AppConfig {
         hotkey: hotkey.clone(),
-        auto_mute_enabled: existing_config.map(|c| c.auto_mute_enabled).unwrap_or(true),
+        auto_mute_enabled: existing_config.as_ref().map(|c| c.auto_mute_enabled).unwrap_or(true),
+        language: existing_config.as_ref().map(|c| c.language.clone()).unwrap_or_else(|| "en".to_string()),
     };
     store.set("config".to_string(), json!(config));
     store.save().map_err(|e| {
@@ -115,8 +116,9 @@ fn set_auto_mute_enabled(app: tauri::AppHandle, enabled: bool) -> Result<(), Str
         .and_then(|v| serde_json::from_value(v).ok());
 
     let config = AppConfig {
-        hotkey: existing_config.map(|c| c.hotkey).unwrap_or_else(|| "Cmd+Option+Space".to_string()),
+        hotkey: existing_config.as_ref().map(|c| c.hotkey.clone()).unwrap_or_else(|| "Cmd+Option+Space".to_string()),
         auto_mute_enabled: enabled,
+        language: existing_config.as_ref().map(|c| c.language.clone()).unwrap_or_else(|| "en".to_string()),
     };
     store.set("config".to_string(), json!(config));
     store.save().map_err(|e| e.to_string())?;
