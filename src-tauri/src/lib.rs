@@ -126,6 +126,32 @@ fn set_auto_mute_enabled(app: tauri::AppHandle, enabled: bool) -> Result<(), Str
 }
 
 #[tauri::command]
+fn get_language(app: tauri::AppHandle) -> Result<String, String> {
+    let store = app.store("config.json").map_err(|e| e.to_string())?;
+    let config = store.get("config").ok_or("Config not found")?;
+    let config: AppConfig = serde_json::from_value(config).map_err(|e| e.to_string())?;
+    Ok(config.language)
+}
+
+#[tauri::command]
+fn set_language(app: tauri::AppHandle, language: String) -> Result<(), String> {
+    let store = app.store("config.json").map_err(|e| e.to_string())?;
+
+    let existing_config: Option<AppConfig> = store
+        .get("config")
+        .and_then(|v| serde_json::from_value(v).ok());
+
+    let config = AppConfig {
+        hotkey: existing_config.as_ref().map(|c| c.hotkey.clone()).unwrap_or_else(|| "Cmd+Option+Space".to_string()),
+        auto_mute_enabled: existing_config.as_ref().map(|c| c.auto_mute_enabled).unwrap_or(true),
+        language: language.clone(),
+    };
+    store.set("config".to_string(), json!(config));
+    store.save().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 fn check_permissions() -> String {
     "Permissions check initiated. Please ensure Microphone and Accessibility are granted in System Settings.".to_string()
 }
@@ -476,7 +502,9 @@ pub fn run() {
             get_hotkey,
             save_hotkey,
             get_auto_mute_enabled,
-            set_auto_mute_enabled
+            set_auto_mute_enabled,
+            get_language,
+            set_language
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
