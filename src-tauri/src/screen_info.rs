@@ -5,12 +5,33 @@
 
 use objc2_app_kit::NSScreen;
 use objc2_foundation::MainThreadMarker;
+use std::sync::Mutex;
 
-/// Get the screen width in points from the main screen's visible frame.
+/// Cached screen dimensions received from the helper app.
+/// The helper app queries NSScreen directly when it starts.
+static CACHED_DIMENSIONS: Mutex<Option<(i32, i32)>> = Mutex::new(None);
+
+/// Set cached screen dimensions received from the helper app.
+pub fn set_cached_dimensions(width: i32, height: i32) {
+    if let Ok(mut cached) = CACHED_DIMENSIONS.lock() {
+        *cached = Some((width, height));
+    }
+}
+
+/// Get the screen width in points.
+/// First checks cached dimensions from helper app, then falls back to NSScreen query.
 pub fn get_screen_width() -> i32 {
+    // First check cached dimensions from helper app
+    if let Ok(cached) = CACHED_DIMENSIONS.lock() {
+        if let Some((width, _)) = *cached {
+            return width;
+        }
+    }
+
+    // Fallback to NSScreen query
     let mtm = match MainThreadMarker::new() {
         Some(mtm) => mtm,
-        None => return 1920, // Fallback for non-main-thread
+        None => return 1920,
     };
 
     NSScreen::mainScreen(mtm)
@@ -18,11 +39,20 @@ pub fn get_screen_width() -> i32 {
         .unwrap_or(1920)
 }
 
-/// Get the screen height in points from the main screen's visible frame.
+/// Get the screen height in points.
+/// First checks cached dimensions from helper app, then falls back to NSScreen query.
 pub fn get_screen_height() -> i32 {
+    // First check cached dimensions from helper app
+    if let Ok(cached) = CACHED_DIMENSIONS.lock() {
+        if let Some((_, height)) = *cached {
+            return height;
+        }
+    }
+
+    // Fallback to NSScreen query
     let mtm = match MainThreadMarker::new() {
         Some(mtm) => mtm,
-        None => return 1080, // Fallback for non-main-thread
+        None => return 1080,
     };
 
     NSScreen::mainScreen(mtm)

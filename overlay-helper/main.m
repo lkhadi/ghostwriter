@@ -102,6 +102,14 @@
 - (void)handleClient:(int)clientSocket {
     NSLog(@"SocketServer: Handling client...");
 
+    // Send screen dimensions immediately when client connects
+    NSRect screenFrame = [[NSScreen mainScreen] visibleFrame];
+    NSInteger screenWidth = (NSInteger)screenFrame.size.width;
+    NSInteger screenHeight = (NSInteger)screenFrame.size.height;
+    NSString *dimCommand = [NSString stringWithFormat:@"DIMENSIONS %ld %ld\n", (long)screenWidth, (long)screenHeight];
+    NSLog(@"SocketServer: Sending dimensions: %@", dimCommand);
+    write(clientSocket, [dimCommand UTF8String], [dimCommand length]);
+
     char buffer[256];
     ssize_t bytesRead;
 
