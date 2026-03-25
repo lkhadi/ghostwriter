@@ -29,7 +29,7 @@ pub fn stop_and_transcribe_logic(app: tauri::AppHandle) {
             match state.transcriber.lock() {
                 Ok(transcriber_guard) => {
                     if let Some(transcriber) = transcriber_guard.as_ref() {
-                        match transcriber.transcribe(&audio) {
+                        match transcriber.transcribe(&audio, "en") {
                             Ok(t) => t,
                             Err(e) => {
                                 eprintln!("Transcription error: {}", e);

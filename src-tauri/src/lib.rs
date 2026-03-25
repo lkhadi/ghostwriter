@@ -200,7 +200,7 @@ fn transcribe_test_audio(app: tauri::AppHandle) -> Result<String, String> {
     let samples: Vec<f32> = reader.samples::<f32>().map(|s| s.unwrap_or(0.0)).collect();
 
     let text = transcriber
-        .transcribe(&samples)
+        .transcribe(&samples, "en")
         .map_err(|e| e.to_string())?;
     Ok(text)
 }

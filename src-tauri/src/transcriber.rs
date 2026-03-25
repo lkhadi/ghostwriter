@@ -20,7 +20,7 @@ impl Transcriber {
         Ok(Self { ctx })
     }
 
-    pub fn transcribe(&self, audio_data: &[f32]) -> Result<String, Box<dyn Error + Send + Sync>> {
+    pub fn transcribe(&self, audio_data: &[f32], language: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
         let mut state = self
             .ctx
             .create_state()
@@ -29,7 +29,7 @@ impl Transcriber {
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
         params.set_n_threads(4);
         params.set_translate(false);
-        params.set_language(Some("en"));
+        params.set_language(Some(language));
         params.set_print_special(false);
         params.set_print_progress(false);
         params.set_print_realtime(false);
