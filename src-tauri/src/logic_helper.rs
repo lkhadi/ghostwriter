@@ -64,10 +64,9 @@ pub fn stop_and_transcribe_logic(app: tauri::AppHandle) {
 
         // Unmute system audio
         let previous_vol = {
-            if let Ok(prev) = state.previous_volume.lock() {
-                *prev
-            } else {
-                None
+            match state.previous_volume.lock() {
+                Ok(prev) => *prev,
+                _ => None,
             }
         };
 

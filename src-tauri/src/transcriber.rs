@@ -20,7 +20,11 @@ impl Transcriber {
         Ok(Self { ctx })
     }
 
-    pub fn transcribe(&self, audio_data: &[f32], language: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
+    pub fn transcribe(
+        &self,
+        audio_data: &[f32],
+        language: &str,
+    ) -> Result<String, Box<dyn Error + Send + Sync>> {
         let mut state = self
             .ctx
             .create_state()

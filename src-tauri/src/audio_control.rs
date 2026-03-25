@@ -55,6 +55,10 @@ pub fn mute_system_audio() -> Result<u32, String> {
 /// Takes the previous volume to restore
 pub fn unmute_system_audio(previous_volume: u32) -> Result<(), String> {
     // Restore previous volume (but ensure it's at least audible, e.g., 20%)
-    let volume_to_restore = if previous_volume < 20 { 30 } else { previous_volume };
+    let volume_to_restore = if previous_volume < 20 {
+        30
+    } else {
+        previous_volume
+    };
     set_system_volume(volume_to_restore)
 }

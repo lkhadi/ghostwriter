@@ -14,7 +14,6 @@ use audio_recorder::AudioRecorder;
 use config::{init_store, AppConfig};
 use injector::Injector;
 use logic_helper::stop_and_transcribe_logic;
-use mouse_position::mouse_position::Mouse;
 use serde_json::json;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -85,8 +84,14 @@ fn save_hotkey(app: tauri::AppHandle, hotkey: String) -> Result<(), String> {
 
     let config = AppConfig {
         hotkey: hotkey.clone(),
-        auto_mute_enabled: existing_config.as_ref().map(|c| c.auto_mute_enabled).unwrap_or(true),
-        language: existing_config.as_ref().map(|c| c.language.clone()).unwrap_or_else(|| "en".to_string()),
+        auto_mute_enabled: existing_config
+            .as_ref()
+            .map(|c| c.auto_mute_enabled)
+            .unwrap_or(true),
+        language: existing_config
+            .as_ref()
+            .map(|c| c.language.clone())
+            .unwrap_or_else(|| "en".to_string()),
     };
     store.set("config".to_string(), json!(config));
     store.save().map_err(|e| {
@@ -116,9 +121,15 @@ fn set_auto_mute_enabled(app: tauri::AppHandle, enabled: bool) -> Result<(), Str
         .and_then(|v| serde_json::from_value(v).ok());
 
     let config = AppConfig {
-        hotkey: existing_config.as_ref().map(|c| c.hotkey.clone()).unwrap_or_else(|| "Cmd+Option+Space".to_string()),
+        hotkey: existing_config
+            .as_ref()
+            .map(|c| c.hotkey.clone())
+            .unwrap_or_else(|| "Cmd+Option+Space".to_string()),
         auto_mute_enabled: enabled,
-        language: existing_config.as_ref().map(|c| c.language.clone()).unwrap_or_else(|| "en".to_string()),
+        language: existing_config
+            .as_ref()
+            .map(|c| c.language.clone())
+            .unwrap_or_else(|| "en".to_string()),
     };
     store.set("config".to_string(), json!(config));
     store.save().map_err(|e| e.to_string())?;
@@ -142,8 +153,14 @@ fn set_language(app: tauri::AppHandle, language: String) -> Result<(), String> {
         .and_then(|v| serde_json::from_value(v).ok());
 
     let config = AppConfig {
-        hotkey: existing_config.as_ref().map(|c| c.hotkey.clone()).unwrap_or_else(|| "Cmd+Option+Space".to_string()),
-        auto_mute_enabled: existing_config.as_ref().map(|c| c.auto_mute_enabled).unwrap_or(true),
+        hotkey: existing_config
+            .as_ref()
+            .map(|c| c.hotkey.clone())
+            .unwrap_or_else(|| "Cmd+Option+Space".to_string()),
+        auto_mute_enabled: existing_config
+            .as_ref()
+            .map(|c| c.auto_mute_enabled)
+            .unwrap_or(true),
         language: language.clone(),
     };
     store.set("config".to_string(), json!(config));
@@ -251,10 +268,9 @@ fn inject_test_text(text: String) -> Result<String, String> {
 /// Helper function to unmute system audio if we muted it
 fn unmute_if_needed(state: &State<AppState>) {
     let previous_vol = {
-        if let Ok(prev) = state.previous_volume.lock() {
-            *prev
-        } else {
-            None
+        match state.previous_volume.lock() {
+            Ok(prev) => *prev,
+            _ => None,
         }
     };
 
@@ -299,13 +315,15 @@ pub fn run() {
                             if !recorder.is_recording() {
                                 // START RECORDING
                                 println!("Starting recording...");
-                                if let Ok(_) = recorder.start_recording() {
+                                if recorder.start_recording().is_ok() {
                                     // Check if auto-mute is enabled
                                     let auto_mute_enabled = {
                                         let store = app_handle.store("config.json").ok();
                                         store
                                             .and_then(|s| s.get("config"))
-                                            .and_then(|c| serde_json::from_value::<AppConfig>(c).ok())
+                                            .and_then(|c| {
+                                                serde_json::from_value::<AppConfig>(c).ok()
+                                            })
                                             .map(|c| c.auto_mute_enabled)
                                             .unwrap_or(true)
                                     };
@@ -317,7 +335,10 @@ pub fn run() {
                                                 if let Ok(mut prev) = state.previous_volume.lock() {
                                                     *prev = Some(previous_vol);
                                                 }
-                                                println!("System audio muted (previous volume: {})", previous_vol);
+                                                println!(
+                                                    "System audio muted (previous volume: {})",
+                                                    previous_vol
+                                                );
                                             }
                                             Err(e) => {
                                                 eprintln!("Failed to mute system audio: {}", e);
