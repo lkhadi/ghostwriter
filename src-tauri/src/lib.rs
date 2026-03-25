@@ -225,8 +225,18 @@ fn transcribe_test_audio(app: tauri::AppHandle) -> Result<String, String> {
     // We saved as float 32, so read as float 32
     let samples: Vec<f32> = reader.samples::<f32>().map(|s| s.unwrap_or(0.0)).collect();
 
+    // Get language from config
+    let language = {
+        let store = app.store("config.json").ok();
+        store
+            .and_then(|s| s.get("config"))
+            .and_then(|c| serde_json::from_value::<AppConfig>(c).ok())
+            .map(|c| c.language)
+            .unwrap_or_else(|| "en".to_string())
+    };
+
     let text = transcriber
-        .transcribe(&samples, "en")
+        .transcribe(&samples, &language)
         .map_err(|e| e.to_string())?;
     Ok(text)
 }
