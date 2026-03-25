@@ -82,7 +82,7 @@ async function loadLanguage() {
 
 async function saveLanguage() {
   try {
-    await invoke("set_language", { lang: selectedLanguage.value });
+    await invoke("set_language", { language: selectedLanguage.value });
     log("Saved language: " + selectedLanguage.value);
   } catch (e) {
     log("Error saving language: " + e);
