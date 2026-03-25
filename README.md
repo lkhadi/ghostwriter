@@ -2,13 +2,15 @@
 
 A macOS voice dictation desktop application built with Tauri 2 + Vue 3 + Rust. It records audio via a global hotkey, transcribes speech to text using Whisper, and injects the transcribed text into the active application.
 
+> **Cross-Platform Status**: Currently optimized for macOS. The core functionality (record → transcribe → inject) uses cross-platform libraries (enigo, cpal, Whisper) and could be extended to Windows/Linux by replacing the macOS-specific HUD overlay with a Tauri webview-based alternative.
+
 ## Features
 
 - **Global Hotkey**: Configurable shortcut to start/stop recording
 - **Press Modes**:
   - Short press = toggle mode (press again to stop)
   - Long press (>350ms) = hold mode
-- **Recording HUD**: Visual overlay showing recording status
+- **Recording HUD**: Visual overlay showing recording status (macOS native overlay, webview fallback on other platforms)
 - **Whisper Transcription**: Offline speech-to-text using Whisper model
 - **Text Injection**: Automatically types transcribed text into the active application
 - **System Tray**: App minimizes to tray for quick access
@@ -18,7 +20,7 @@ A macOS voice dictation desktop application built with Tauri 2 + Vue 3 + Rust. I
 - macOS (requires Microphone and Accessibility permissions)
 - [Node.js](https://nodejs.org/) v18+
 - [Rust](https://www.rust-lang.org/) latest stable
-- Whisper model: `src-tauri/models/ggml-base.en.bin` (place in resources)
+- Whisper model: `src-tauri/models/ggml-base.bin` (place in resources)
 
 ## Setup
 
@@ -66,7 +68,12 @@ npm run tauri build
 - `src-tauri/src/logic_helper.rs` - Stop-and-transcribe workflow
 
 ### External Dependencies
-- `overlay-helper/` - Separate macOS helper app for displaying the recording HUD overlay
+- `overlay-helper/` - Separate macOS helper app for displaying the recording HUD overlay (macOS only)
+
+### Cross-Platform Libraries
+- **enigo** - Keyboard simulation (Windows, macOS, Linux)
+- **cpal** - Cross-platform audio capture
+- **Whisper** - Offline speech-to-text transcription
 
 ## Recommended IDE Setup
 
