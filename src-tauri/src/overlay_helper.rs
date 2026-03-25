@@ -14,6 +14,35 @@ pub struct OverlayHelper {
 }
 
 impl OverlayHelper {
+    /// Receive screen dimensions from the helper app.
+    /// The helper sends DIMENSIONS <width> <height> immediately upon connection.
+    fn receive_dimensions(stream: &mut UnixStream) -> Result<(), String> {
+        let mut reader = BufReader::new(stream);
+        let mut line = String::new();
+        reader
+            .read_line(&mut line)
+            .map_err(|e| format!("Failed to read dimensions: {}", e))?;
+
+        let line = line.trim();
+        if line.starts_with("DIMENSIONS") {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 3 {
+                let width: i32 = parts[1]
+                    .parse()
+                    .map_err(|_| "Invalid width")?;
+                let height: i32 = parts[2]
+                    .parse()
+                    .map_err(|_| "Invalid height")?;
+                screen_info::set_cached_dimensions(width, height);
+                println!("[overlay_helper] Received cached dimensions: {}x{}", width, height);
+                return Ok(());
+            }
+        }
+        Err(format!("Unexpected dimensions message: {}", line))
+    }
+}
+
+impl OverlayHelper {
     fn get_resource_path(rel_path: &str) -> PathBuf {
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(macos_dir) = exe_path.parent() {
@@ -143,6 +172,12 @@ impl OverlayHelper {
     fn send_command(&self, command: &str) -> Result<(), String> {
         let mut stream = UnixStream::connect(SOCKET_PATH)
             .map_err(|e| format!("Failed to connect to helper: {}", e))?;
+
+        // Receive screen dimensions from helper (it sends them immediately on connect)
+        if let Err(e) = Self::receive_dimensions(&mut stream) {
+            // If we can't receive dimensions, log but continue
+            println!("[overlay_helper] Warning: {}", e);
+        }
 
         stream
             .write_all(command.as_bytes())
