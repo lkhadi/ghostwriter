@@ -164,6 +164,16 @@ impl OverlayHelper {
         self.send_command("HIDE")
     }
 
+    /// Asks the helper to exit. Fire-and-forget: the helper terminates
+    /// immediately, so it may die before acking — do not route this
+    /// through `send_command`, which requires the ack.
+    pub fn quit(&self) {
+        if let Ok(mut stream) = UnixStream::connect(SOCKET_PATH) {
+            let _ = writeln!(stream, "QUIT");
+            let _ = stream.flush();
+        }
+    }
+
     pub fn set_window_level(&self, level: &str) -> Result<(), String> {
         let cmd = format!("SET_LEVEL {}", level);
         self.send_command(&cmd)

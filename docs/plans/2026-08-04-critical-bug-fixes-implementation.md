@@ -601,7 +601,7 @@ None added. All changes are within existing crates.
 
 | Risk | Mitigation |
 |------|------------|
-| `RunEvent::Exit` may not fire for tray-quit | Task 3 Step 5 verifies both quit paths before the temporary println is removed |
+| ~~`RunEvent::Exit` may not fire for tray-quit~~ | **Resolved during execution.** tauri 2.10.3 `app.rs:531` documents `AppHandle::exit()` as triggering `ExitRequested` *and* `Exit`; `app.rs:1304-1307` invokes the run callback before `cleanup_before_exit()`, so `AppState` is still available. No runtime check needed. |
 | `Shortcut` grammar may reject `e.code` names like `KeyA` | Task 4 Step 3 pins the grammar in a test that runs *before* Task 5 writes the mapping |
 | Removing the `len() < 2` rule lets single stray characters through | The `is_alphanumeric` rule still rejects punctuation-only output; `suppress_blank` and `no_speech_thold` remain set in `transcribe()` |
 | `HudGuard` hides the HUD even when the caller wanted it to persist | There is no such caller — `stop_and_transcribe_logic` is the only place the HUD is ever hidden |

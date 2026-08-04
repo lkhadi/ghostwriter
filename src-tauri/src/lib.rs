@@ -290,6 +290,30 @@ fn unmute_if_needed(state: &State<AppState>) {
     }
 }
 
+/// Runs once as the app tears down. Without this, quitting mid-recording
+/// leaves the system muted and the overlay helper process running.
+fn cleanup_on_exit(app: &tauri::AppHandle) {
+    let state = app.state::<AppState>();
+
+    let previous_volume = state.previous_volume.lock().ok().and_then(|v| *v);
+    if let Some(vol) = previous_volume {
+        match unmute_system_audio(vol) {
+            Ok(_) => println!("[exit] system audio restored to volume: {}", vol),
+            Err(e) => eprintln!("[exit] failed to restore volume: {}", e),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let overlay = state.overlay.lock();
+        if let Ok(ref overlay_guard) = overlay {
+            if let Some(helper) = overlay_guard.as_ref() {
+                helper.quit();
+            }
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -544,6 +568,11 @@ pub fn run() {
                 api.prevent_close();
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                cleanup_on_exit(app_handle);
+            }
+        });
 }
