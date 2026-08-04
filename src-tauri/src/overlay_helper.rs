@@ -1,11 +1,21 @@
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::time::Duration;
 
-const SOCKET_PATH: &str = "/tmp/ghostwriter_overlay.sock";
+const SOCKET_NAME: &str = "ghostwriter_overlay.sock";
+
+/// Path of the HUD control socket.
+///
+/// Uses `$TMPDIR`, which macOS gives each user privately, rather than the
+/// world-writable `/tmp`. Anything that can connect here can show, hide or
+/// terminate the overlay. Must stay in sync with `socketPath` in
+/// `overlay-helper/main.m`.
+fn socket_path() -> PathBuf {
+    std::env::temp_dir().join(SOCKET_NAME)
+}
 
 pub struct OverlayHelper {
     process: Mutex<Option<Child>>,
@@ -65,14 +75,14 @@ impl OverlayHelper {
 
         let mut attempts = 0;
         while attempts < 50 {
-            if Path::new(SOCKET_PATH).exists() {
+            if socket_path().exists() {
                 break;
             }
             std::thread::sleep(Duration::from_millis(100));
             attempts += 1;
         }
 
-        if !Path::new(SOCKET_PATH).exists() {
+        if !socket_path().exists() {
             return Err("Helper app failed to start (socket not available)".to_string());
         }
 
@@ -89,7 +99,7 @@ impl OverlayHelper {
 
     fn stop_existing() {
         // Send QUIT command gracefully
-        if let Ok(mut stream) = UnixStream::connect(SOCKET_PATH) {
+        if let Ok(mut stream) = UnixStream::connect(socket_path()) {
             let _ = writeln!(stream, "QUIT");
             let _ = stream.flush();
             let _ = stream.shutdown(std::net::Shutdown::Both);
@@ -104,7 +114,7 @@ impl OverlayHelper {
             .status();
 
         // Remove socket
-        let _ = std::fs::remove_file(SOCKET_PATH);
+        let _ = std::fs::remove_file(socket_path());
 
         // Wait to ensure clean shutdown
         std::thread::sleep(Duration::from_millis(200));
@@ -127,14 +137,14 @@ impl OverlayHelper {
     /// immediately, so it may die before acking — do not route this
     /// through `send_command`, which requires the ack.
     pub fn quit(&self) {
-        if let Ok(mut stream) = UnixStream::connect(SOCKET_PATH) {
+        if let Ok(mut stream) = UnixStream::connect(socket_path()) {
             let _ = writeln!(stream, "QUIT");
             let _ = stream.flush();
         }
     }
 
     fn send_command(&self, command: &str) -> Result<(), String> {
-        let mut stream = UnixStream::connect(SOCKET_PATH)
+        let mut stream = UnixStream::connect(socket_path())
             .map_err(|e| format!("Failed to connect to helper: {}", e))?;
 
         stream
@@ -167,6 +177,6 @@ impl Drop for OverlayHelper {
                 let _ = child.wait();
             }
         }
-        let _ = std::fs::remove_file(SOCKET_PATH);
+        let _ = std::fs::remove_file(socket_path());
     }
 }

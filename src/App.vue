@@ -232,10 +232,15 @@ async function checkPermissions() {
 </template>
 
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
-
+/*
+  No webfont import. An offline dictation app should not need the network to
+  render, and the previous @import pulled Inter from fonts.googleapis.com on
+  every launch — a render-blocking request that also leaked a ping. The system
+  stack is what the rest of macOS uses anyway.
+*/
 :root {
-  font-family: 'Inter', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+    sans-serif;
   /* background: #000; REMOVED */
   color: #fff;
   overflow: hidden;

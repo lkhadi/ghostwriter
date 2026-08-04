@@ -185,9 +185,41 @@ fn set_language(app: tauri::AppHandle, language: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Opens the macOS privacy settings the app depends on.
+///
+/// This used to return "Permissions check initiated." without checking
+/// anything. Rather than pretend, take the user somewhere useful: the two
+/// panes that actually govern dictation.
 #[tauri::command]
 fn check_permissions() -> String {
-    "Permissions check initiated. Please ensure Microphone and Accessibility are granted in System Settings.".to_string()
+    let panes = [
+        (
+            "Microphone",
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+        ),
+        (
+            "Accessibility",
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+        ),
+    ];
+
+    let mut opened = Vec::new();
+    for (name, url) in panes {
+        match std::process::Command::new("open").arg(url).status() {
+            Ok(status) if status.success() => opened.push(name),
+            Ok(status) => eprintln!("`open` exited with {} for {}", status, name),
+            Err(e) => eprintln!("Failed to open {} settings: {}", name, e),
+        }
+    }
+
+    if opened.is_empty() {
+        "Could not open System Settings. Grant Microphone and Accessibility manually under Privacy & Security.".to_string()
+    } else {
+        format!(
+            "Opened {} settings. GhostWriter needs both Microphone and Accessibility.",
+            opened.join(" and ")
+        )
+    }
 }
 
 #[tauri::command]

@@ -27,3 +27,13 @@ dist-ssr
 # overlay-helper build artifacts
 /overlay-helper/*.app
 /overlay-helper/GhostWriterOverlayHelper
+
+# Rust build output (rust-analyzer flycheck writes here)
+/target/
+
+# Compiled output of the ad-hoc check_*.m / find_flags.m diagnostics
+/check_cglevels
+/check_levels
+/check_nslevel
+/find_flags
+/test_collection
