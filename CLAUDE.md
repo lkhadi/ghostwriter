@@ -6,13 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 GhostWriter is a macOS voice dictation app: a Tauri 2 + Vue 3 shell around a Rust core that records audio on a global hotkey, transcribes it locally with Whisper, and types the result into whatever app has focus.
 
-macOS is the only working target. The `#[cfg(not(target_os = "macos"))]` branches in `lib.rs` are stale — they call `Mouse::get_mouse_position()` with no matching import (`lib.rs:369`) and reach for a `hud` webview window that `tauri.conf.json` doesn't declare, which also makes `src/components/Hud.vue` dead code on macOS.
+macOS only, and honestly so — the `cfg(not(target_os = "macos"))` branches were deleted rather than left as a promise the code could not keep (they referenced an unimported symbol and a window `tauri.conf.json` never declared, so they could not compile). `tauri.conf.json` declares exactly one window, `main`.
 
 ## Commands
 
 ```bash
 npm install
-git lfs pull                        # Whisper weights + CoreML encoder are LFS objects
+git lfs pull                        # the Whisper weights are an LFS object
 
 cd overlay-helper && make install    # REQUIRED before running: builds the Obj-C HUD app and
                                      # copies it into src-tauri/overlay-helper/ for bundling
@@ -21,13 +21,13 @@ npm run tauri dev                    # run the app (Vite on :1421 + Rust)
 npm run tauri build                  # production bundle
 
 cd src-tauri
-cargo fmt && cargo clippy && cargo test
-cargo test screen_info                # single-module filter
+cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test --lib
+cargo test transcriber                # single-module filter
 ```
 
 Skipping `make install` fails silently at runtime: `OverlayHelper::new()` errors, `AppState.overlay` stays `None`, and dictation works with no HUD.
 
-There is no JS lint/test tooling — `package.json` carries vite scripts only. `cargo test` currently covers `screen_info` alone, and those assertions query the real display, so they need a GUI session.
+There is no JS lint/test tooling — `package.json` carries vite scripts only. `cargo test --lib` covers the transcript hallucination filter and the shortcut-string grammar; both are pure functions, so they need no display or device.
 
 ## Architecture
 
@@ -35,25 +35,35 @@ There is no JS lint/test tooling — `package.json` carries vite scripts only. `
 
 The recording HUD is **not** a Tauri window. `overlay-helper/` is a standalone Obj-C app (`main.m` + `HUDPanel.m`, built by its own `Makefile`) hosting a borderless `NSPanel` at `kCGMainMenuWindowLevel - 1` with `FullScreenAuxiliary | CanJoinAllSpaces | Stationary` collection behavior — the combination needed to float above fullscreen apps and Electron windows (VS Code). It renders `hud.html` in a `WKWebView`.
 
-Rust drives it over a Unix socket at `/tmp/ghostwriter_overlay.sock` (`overlay_helper.rs` ↔ the `SocketServer` in `main.m`), one fresh connection per command:
+Rust drives it over a Unix socket in `$TMPDIR` (`overlay_helper.rs::socket_path()` ↔ `socketPath` in `main.m` — the two must stay in sync), one fresh connection per command:
 
-1. Helper writes `DIMENSIONS <w> <h>` immediately on connect.
-2. Rust sends `SHOW <x> <y>` | `HIDE` | `SET_LEVEL MAIN|FLOATING|STATUS` | `QUIT`.
-3. Helper replies `OK\n`.
+1. Rust sends `SHOW_CENTERED` | `SHOW <x> <y>` | `HIDE` | `QUIT`.
+2. Helper replies `OK\n`.
 
-`OverlayHelper::new()` enforces a singleton: send `QUIT`, `pkill -9 -f GhostWriterOverlayHelper`, delete the socket, then launch — searching `Contents/Resources/overlay-helper/…` (bundled) before `../overlay-helper/…` (dev, where CWD is `src-tauri`).
+**The helper owns all geometry.** `SHOW_CENTERED` exists because it runs on the main thread with real `NSScreen` access, including `visibleFrame.origin`, which is routinely non-zero or negative on a multi-display setup. Rust holds no screen state at all. `SHOW x y` survives only for the `test-*.sh` scripts.
 
-### Screen dimensions
+`OverlayHelper::new()` enforces a singleton: send `QUIT`, `pkill -9 -f GhostWriterOverlayHelper`, delete the socket, then launch — searching `Contents/Resources/overlay-helper/…` (bundled) before `../overlay-helper/…` (dev, where CWD is `src-tauri`). The `Child` is retained so it can be reaped.
 
-`screen_info.rs` caches the `DIMENSIONS` the helper pushes on each connect because the `NSScreen` fallback requires a `MainThreadMarker` and returns hardcoded 1920x1080 off the main thread — which the shortcut handler always is. `show_centered_bottom()` positions the 220x60 overlay from those cached values, 100 px above the bottom edge.
+### Hotkey state machine (`lib.rs`)
 
-### Hotkey state machine (`lib.rs` global-shortcut handler)
+`DictationState` behind one mutex is the single source of truth. It replaced two independent spawned handlers that inferred state from `press_time` plus `AudioRecorder::is_recording()` — and that flag is flipped *asynchronously by the audio thread*, so it still read `true` for milliseconds after `stop_recording()` returned.
 
-- **Pressed** while idle → start recording, optionally mute system audio, stamp `press_time`, show HUD.
-- **Pressed** while recording → stop and transcribe (toggle-off).
-- **Released** → held > 350 ms stops and transcribes (hold mode); shorter keeps recording (toggle mode).
+| Event | From | To | Action |
+|---|---|---|---|
+| Pressed | `Idle` | `Armed{now}` | start, show HUD, then mute |
+| Pressed | `Toggled` | `Stopping` | stop + transcribe |
+| Pressed | `Armed`/`Stopping` | — | ignore |
+| Released | `Armed`, held > 350 ms | `Stopping` | stop + transcribe |
+| Released | `Armed`, held ≤ 350 ms | `Toggled` | keep recording |
+| Released | anything else | — | ignore |
 
-Both stop paths call `logic_helper::stop_and_transcribe_logic`, which spawns an async task: drain audio → Whisper → restore volume → `enigo` types the text → hide HUD. Its early returns (empty audio, missing transcriber, transcription error) skip the HUD hide, so a no-speech recording leaves the overlay on screen.
+Do not reintroduce `is_recording()` as control flow. `Stopping` → `Idle` happens in `logic_helper`'s `DictationGuard` on `Drop`, so a panic cannot wedge dictation.
+
+The HUD is shown **before** muting: `mute_system_audio` shells out to `osascript` twice, which used to delay the overlay by 100-300 ms. `osascript` and Whisper inference both run on `spawn_blocking`.
+
+### Talking to the UI
+
+The hotkey is handled entirely in Rust, so the frontend learns nothing unless told. `emit_state` sends `dictation-state` (`recording` / `transcribing` / `idle`) and `emit_error` sends `dictation-error`; `App.vue` listens for both. Anything that fails silently in the backend should go through `emit_error` or the user never sees it.
 
 ### Audio pipeline (`audio_recorder.rs`)
 
@@ -61,9 +71,11 @@ Both stop paths call `logic_helper::stop_and_transcribe_logic`, which spawns an 
 
 ### Transcription (`transcriber.rs`)
 
-`WhisperContext` is built once in `setup()` and held in `AppState`; the language code is passed per call. Output is aggressively post-filtered for Whisper hallucinations (music glyphs, "Subtitles by …", bare "you", non-alphanumeric output, under 2 chars) and returns an empty string rather than injecting junk.
+`WhisperContext` is built once in `setup()` and held in `AppState`; the language code is passed per call. Output is post-filtered for Whisper hallucinations. Match against the **whole normalized transcript**, never as substrings — an earlier version used `contains("Thank you")` and silently discarded any dictation containing that phrase. Unreadable segments are skipped, not propagated, so one invalid-UTF-8 segment cannot drop the whole transcript.
 
-**Model naming trap:** `src-tauri/models/ggml-base.en.bin` holds the *multilingual* `ggml-base` weights. The `.en` name was kept so the hardcoded path and the sibling `ggml-base.en-encoder.mlmodelc` keep resolving — whisper-rs's `coreml` feature derives the encoder path from the model filename. The path is hardcoded twice in `lib.rs` (setup and `transcribe_test_audio`).
+**The model filename is load-bearing.** `src-tauri/models/ggml-base.bin` holds the multilingual `ggml-base` weights, named by `WHISPER_MODEL_FILE` in `lib.rs`. whisper.cpp is built with `-DWHISPER_USE_COREML` and derives the Core ML encoder path from this filename by swapping the extension for `-encoder.mlmodelc`. A `.en` name picks up an English-only encoder whose dimensions match, so nothing errors — the transcript is simply garbage. That shipped for months; see `git log` for `fix: remove mismatched Core ML encoder`.
+
+Core ML acceleration is currently off (no encoder is bundled). `-DWHISPER_COREML_ALLOW_FALLBACK` means whisper falls back to CPU, around 0.4 s for a 5-second clip.
 
 ### Config (`config.rs`)
 
@@ -71,11 +83,13 @@ Everything lives under a single `"config"` key in the `config.json` store as one
 
 ### Auto-mute (`audio_control.rs`)
 
-Volume is read and set by shelling out to `osascript`; the pre-mute level is stashed in `AppState.previous_volume`. Restore floors at 30 when the previous volume was under 20.
+Volume is read and set by shelling out to `osascript`; the pre-mute level is stashed in `AppState.previous_volume` and restored **exactly** — an earlier version floored the restore at 30, which turned a deliberately-quiet Mac loud after every dictation. `cleanup_on_exit` on `RunEvent::Exit` restores volume and QUITs the helper, so quitting mid-recording no longer leaves the Mac silent and the helper orphaned.
 
 ### Frontend
 
-A single `App.vue` switches on the webview label (`main` vs `hud`) and drives everything through `invoke`. Every Rust command must be listed in the `invoke_handler!` block at the bottom of `lib.rs`. The `save_test_audio` / `transcribe_test_audio` / `inject_test_text` trio backs the "Debug Tools" panel and round-trips through `~/Desktop/test_audio.wav`.
+One `App.vue` drives everything through `invoke` and the two events above. Every Rust command must be listed in the `invoke_handler!` block at the bottom of `lib.rs`. The `save_test_audio` / `transcribe_test_audio` / `inject_test_text` trio backs the "Debug Tools" panel and round-trips through `~/Desktop/test_audio.wav`; `save_test_audio` snapshots rather than drains, because draining destroyed a recording in progress.
+
+No webfonts — the app must render offline. `csp` is set and `withGlobalTauri` is off, so `window.__TAURI__` does not exist; import from `@tauri-apps/api`.
 
 ## Conventions
 
