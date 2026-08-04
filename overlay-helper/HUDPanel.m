@@ -75,7 +75,9 @@ static const CGFloat kHUDBottomMargin = 100.0;
         self.backgroundColor = [NSColor clearColor];
         self.opaque = NO;
         self.hasShadow = YES;
-        self.ignoresMouseEvents = NO;
+        // Passive indicator: never intercept clicks meant for the app below.
+        // It cannot become key either, so clicks used to land nowhere at all.
+        self.ignoresMouseEvents = YES;
         self.releasedWhenClosed = NO;
 
         // Hide standard window buttons
