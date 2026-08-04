@@ -110,7 +110,19 @@ fn is_hallucination(text: &str) -> bool {
     if !normalized.chars().any(|c| c.is_alphanumeric()) {
         return true;
     }
-    FULL_TEXT_HALLUCINATIONS.contains(&normalized.as_str())
+    if FULL_TEXT_HALLUCINATIONS.contains(&normalized.as_str()) {
+        return true;
+    }
+
+    // Silence tends to produce one filler token repeated — observed "you you"
+    // from a live recording of an empty room. Collapse repeats and re-check,
+    // so "you you you" is dropped while genuine repetition like "no no no"
+    // (not a known hallucination) is left alone.
+    let mut words = normalized.split_whitespace();
+    match words.next() {
+        Some(first) if words.all(|w| w == first) => FULL_TEXT_HALLUCINATIONS.contains(&first),
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -139,6 +151,19 @@ mod tests {
     fn drops_empty_and_punctuation_only() {
         assert!(is_hallucination("   "));
         assert!(is_hallucination("..."));
+    }
+
+    /// Observed from a live recording of an empty room.
+    #[test]
+    fn drops_repeated_filler_token() {
+        assert!(is_hallucination("you you"));
+        assert!(is_hallucination("You you you."));
+    }
+
+    #[test]
+    fn keeps_genuine_repetition() {
+        assert!(!is_hallucination("no no no"));
+        assert!(!is_hallucination("very very good"));
     }
 
     #[test]

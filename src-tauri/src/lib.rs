@@ -372,121 +372,127 @@ fn auto_mute_enabled(app: &tauri::AppHandle) -> bool {
         .unwrap_or(true)
 }
 
-/// Hotkey down.
-///
-/// `Idle` starts recording; `Toggled` stops it. `Armed` (key repeat) and
-/// `Stopping` (transcription in flight) are ignored.
-async fn on_hotkey_pressed(app: tauri::AppHandle) {
-    let state = app.state::<AppState>();
+/// What a hotkey event decided to do, once the state transition is already
+/// committed.
+enum HotkeyAction {
+    StartRecording,
+    StopAndTranscribe,
+    Nothing,
+}
 
-    let current = match state.dictation.lock() {
-        Ok(guard) => *guard,
+/// Hotkey down. `Idle` starts recording; `Toggled` stops it. `Armed` (key
+/// repeat) and `Stopping` (transcription in flight) are ignored.
+fn on_hotkey_pressed(state: &AppState) -> HotkeyAction {
+    let mut guard = match state.dictation.lock() {
+        Ok(guard) => guard,
         Err(e) => {
             eprintln!("Dictation state lock poisoned: {}", e);
-            return;
+            return HotkeyAction::Nothing;
         }
     };
 
-    match current {
+    match *guard {
         DictationState::Idle => {
-            // Start capture first: if the device cannot be opened we must not
-            // mute the user's audio or show a HUD for a recording that is not
-            // happening.
-            let start_result = match state.recorder.lock() {
-                Ok(mut recorder) => recorder.start_recording(),
-                Err(e) => Err(format!("Recorder lock poisoned: {}", e).into()),
+            *guard = DictationState::Armed {
+                pressed_at: Instant::now(),
             };
-
-            if let Err(e) = start_result {
-                emit_error(&app, &format!("Could not start recording: {}", e));
-                return;
-            }
-
-            if let Ok(mut guard) = state.dictation.lock() {
-                *guard = DictationState::Armed {
-                    pressed_at: Instant::now(),
-                };
-            }
-            emit_state(&app, "recording");
-
-            // Show the HUD before muting: muting shells out to osascript twice
-            // and used to delay the overlay by 100-300 ms.
-            {
-                let overlay = state.overlay.lock();
-                if let Ok(ref guard) = overlay {
-                    if let Some(helper) = guard.as_ref() {
-                        if let Err(e) = helper.show_centered_bottom() {
-                            eprintln!("Failed to show overlay: {}", e);
-                        }
-                    }
-                }
-            }
-
-            if auto_mute_enabled(&app) {
-                let app_for_mute = app.clone();
-                // osascript is a subprocess; keep it off the async runtime.
-                tauri::async_runtime::spawn_blocking(move || match mute_system_audio() {
-                    Ok(previous) => {
-                        let state = app_for_mute.state::<AppState>();
-                        if let Ok(mut prev) = state.previous_volume.lock() {
-                            *prev = Some(previous);
-                        }
-                        println!("System audio muted (previous volume: {})", previous);
-                    }
-                    Err(e) => eprintln!("Failed to mute system audio: {}", e),
-                });
-            }
+            HotkeyAction::StartRecording
         }
-
         DictationState::Toggled => {
-            if let Ok(mut guard) = state.dictation.lock() {
-                *guard = DictationState::Stopping;
-            }
+            *guard = DictationState::Stopping;
             println!("Toggle off");
-            stop_recording_and_transcribe(app.clone());
+            HotkeyAction::StopAndTranscribe
         }
-
-        DictationState::Armed { .. } | DictationState::Stopping => {
-            // Key repeat while held, or a press during transcription.
-        }
+        DictationState::Armed { .. } | DictationState::Stopping => HotkeyAction::Nothing,
     }
 }
 
-/// Hotkey up. Only `Armed` is meaningful: long press stops, short press
+/// Hotkey up. Only `Armed` is meaningful: a long press stops, a short press
 /// switches to toggle mode.
-async fn on_hotkey_released(app: tauri::AppHandle) {
-    let state = app.state::<AppState>();
-
-    let pressed_at = {
-        let mut guard = match state.dictation.lock() {
-            Ok(guard) => guard,
-            Err(e) => {
-                eprintln!("Dictation state lock poisoned: {}", e);
-                return;
-            }
-        };
-
-        match *guard {
-            DictationState::Armed { pressed_at } => {
-                if pressed_at.elapsed() > HOLD_THRESHOLD {
-                    *guard = DictationState::Stopping;
-                    Some(pressed_at)
-                } else {
-                    *guard = DictationState::Toggled;
-                    None
-                }
-            }
-            // Includes a release whose task outran its own press.
-            _ => return,
+fn on_hotkey_released(state: &AppState) -> HotkeyAction {
+    let mut guard = match state.dictation.lock() {
+        Ok(guard) => guard,
+        Err(e) => {
+            eprintln!("Dictation state lock poisoned: {}", e);
+            return HotkeyAction::Nothing;
         }
     };
 
-    match pressed_at {
-        Some(pressed_at) => {
-            println!("Long press ({:?}) - stopping", pressed_at.elapsed());
-            stop_recording_and_transcribe(app.clone());
+    match *guard {
+        DictationState::Armed { pressed_at } => {
+            let held = pressed_at.elapsed();
+            if held > HOLD_THRESHOLD {
+                *guard = DictationState::Stopping;
+                println!("Long press ({:?}) - stopping", held);
+                HotkeyAction::StopAndTranscribe
+            } else {
+                *guard = DictationState::Toggled;
+                println!("Short press - kept recording (toggle mode)");
+                HotkeyAction::Nothing
+            }
         }
-        None => println!("Short press - kept recording (toggle mode)"),
+        _ => HotkeyAction::Nothing,
+    }
+}
+
+/// Opens the input device and puts the app into the recording state.
+///
+/// The state machine has already committed to `Armed` before this runs, so a
+/// release arriving while the device is still opening is still seen. If the
+/// device cannot be opened we roll back to `Idle`.
+async fn start_recording_side_effects(app: tauri::AppHandle) {
+    let start_result = {
+        let state = app.state::<AppState>();
+        let recorder = state.recorder.lock();
+        match recorder {
+            Ok(mut recorder) => recorder.start_recording(),
+            Err(e) => Err(format!("Recorder lock poisoned: {}", e).into()),
+        }
+    };
+
+    if let Err(e) = start_result {
+        {
+            let state = app.state::<AppState>();
+            let dictation = state.dictation.lock();
+            if let Ok(mut guard) = dictation {
+                *guard = DictationState::Idle;
+            }
+        }
+        emit_error(&app, &format!("Could not start recording: {}", e));
+        emit_state(&app, "idle");
+        return;
+    }
+
+    emit_state(&app, "recording");
+
+    // Show the HUD before muting: muting shells out to osascript twice and
+    // used to delay the overlay by 100-300 ms.
+    {
+        let state = app.state::<AppState>();
+        let overlay = state.overlay.lock();
+        if let Ok(ref guard) = overlay {
+            if let Some(helper) = guard.as_ref() {
+                if let Err(e) = helper.show_centered_bottom() {
+                    eprintln!("Failed to show overlay: {}", e);
+                }
+            }
+        }
+    }
+
+    if auto_mute_enabled(&app) {
+        let app_for_mute = app.clone();
+        // osascript is a subprocess; keep it off the async runtime.
+        tauri::async_runtime::spawn_blocking(move || match mute_system_audio() {
+            Ok(previous) => {
+                let state = app_for_mute.state::<AppState>();
+                let prev_guard = state.previous_volume.lock();
+                if let Ok(mut prev) = prev_guard {
+                    *prev = Some(previous);
+                }
+                println!("System audio muted (previous volume: {})", previous);
+            }
+            Err(e) => eprintln!("Failed to mute system audio: {}", e),
+        });
     }
 }
 
@@ -515,20 +521,39 @@ pub fn run() {
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(move |app, shortcut, event| {
+                    // The transition is decided synchronously, here, so press
+                    // and release are always applied in the order the OS
+                    // delivered them. Deciding inside the spawned tasks meant
+                    // a release could be evaluated before its own press had
+                    // finished opening the audio device, and be discarded —
+                    // leaving the machine Armed with the key physically up.
+                    let action = {
+                        let state = app.state::<AppState>();
+                        match event.state() {
+                            ShortcutState::Pressed => {
+                                println!("Shortcut pressed: {:?}", shortcut);
+                                on_hotkey_pressed(&state)
+                            }
+                            ShortcutState::Released => {
+                                println!("Shortcut released: {:?}", shortcut);
+                                on_hotkey_released(&state)
+                            }
+                        }
+                    };
+
                     let app_handle = app.clone();
-                    match event.state() {
-                        ShortcutState::Pressed => {
-                            println!("Shortcut pressed: {:?}", shortcut);
+                    match action {
+                        HotkeyAction::StartRecording => {
                             tauri::async_runtime::spawn(async move {
-                                on_hotkey_pressed(app_handle).await
+                                start_recording_side_effects(app_handle).await
                             });
                         }
-                        ShortcutState::Released => {
-                            println!("Shortcut released: {:?}", shortcut);
+                        HotkeyAction::StopAndTranscribe => {
                             tauri::async_runtime::spawn(async move {
-                                on_hotkey_released(app_handle).await
+                                stop_recording_and_transcribe(app_handle)
                             });
                         }
+                        HotkeyAction::Nothing => {}
                     }
                 })
                 .build(),
