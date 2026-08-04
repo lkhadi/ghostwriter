@@ -290,6 +290,15 @@ mod hotkey_tests {
         }
     }
 
+    /// Configs written by the previous `e.key`-based recorder must keep
+    /// working after the switch to `e.code`.
+    #[test]
+    fn previously_stored_hotkey_formats_still_parse() {
+        for s in ["Command+Shift+.", "Command+Alt+SPACE", "Control+A"] {
+            assert!(s.parse::<Shortcut>().is_ok(), "{s} should still parse");
+        }
+    }
+
     /// Modifiers must precede the key, and a key is required.
     #[test]
     fn rejects_malformed_shortcuts() {
@@ -430,9 +439,12 @@ pub fn run() {
                         tauri::async_runtime::spawn(async move {
                             let state = app_handle.state::<AppState>();
 
-                            let start_time = {
-                                let pt = state.press_time.lock().unwrap(); // safe unwrap or match
-                                *pt
+                            let start_time = match state.press_time.lock() {
+                                Ok(pt) => *pt,
+                                Err(e) => {
+                                    eprintln!("Press time lock poisoned: {}", e);
+                                    return;
+                                }
                             };
 
                             if let Some(time) = start_time {
@@ -544,14 +556,32 @@ pub fn run() {
                 overlay: Mutex::new(overlay_helper),
             });
 
-            // Register hotkey from config
+            // Register hotkey from config. Never propagate an error here: a
+            // malformed config would panic on every launch, leaving the app
+            // unstartable until the store was deleted by hand.
             let store = app.store("config.json")?;
-            if let Some(config_val) = store.get("config") {
-                let config: AppConfig = serde_json::from_value(config_val)?;
-                let shortcut = config
-                    .hotkey
-                    .parse::<tauri_plugin_global_shortcut::Shortcut>()?;
-                app.global_shortcut().register(shortcut)?;
+            let config = load_config(&store);
+
+            let shortcut = config
+                .hotkey
+                .parse::<tauri_plugin_global_shortcut::Shortcut>()
+                .or_else(|e| {
+                    eprintln!(
+                        "[setup] Invalid hotkey '{}' in config ({}), falling back to default",
+                        config.hotkey, e
+                    );
+                    AppConfig::default()
+                        .hotkey
+                        .parse::<tauri_plugin_global_shortcut::Shortcut>()
+                });
+
+            match shortcut {
+                Ok(shortcut) => {
+                    if let Err(e) = app.global_shortcut().register(shortcut) {
+                        eprintln!("[setup] Failed to register hotkey: {}", e);
+                    }
+                }
+                Err(e) => eprintln!("[setup] No usable hotkey: {}", e),
             }
 
             Ok(())
@@ -572,7 +602,9 @@ pub fn run() {
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                window.hide().unwrap();
+                if let Err(e) = window.hide() {
+                    eprintln!("Failed to hide window on close: {}", e);
+                }
                 api.prevent_close();
             }
         })
