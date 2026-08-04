@@ -27,6 +27,15 @@ use transcriber::Transcriber;
 #[cfg(target_os = "macos")]
 use overlay_helper::OverlayHelper;
 
+/// Multilingual `ggml-base` weights.
+///
+/// The name matters beyond bookkeeping: whisper.cpp is built here with
+/// `-DWHISPER_USE_COREML` and derives the Core ML encoder path from this
+/// filename by swapping the extension for `-encoder.mlmodelc`. A `.en`
+/// name would silently pick up an English-only encoder and feed its
+/// output to these multilingual weights, producing garbage.
+const WHISPER_MODEL_FILE: &str = "ggml-base.bin";
+
 pub struct AppState {
     pub recorder: Mutex<AudioRecorder>,
     pub transcriber: Mutex<Option<Transcriber>>,
@@ -220,7 +229,7 @@ fn transcribe_test_audio(app: tauri::AppHandle) -> Result<String, String> {
         .resource_dir()
         .map_err(|e| e.to_string())?
         .join("models")
-        .join("ggml-base.en.bin");
+        .join(WHISPER_MODEL_FILE);
 
     if !resource_path.exists() {
         return Err(format!("Model not found at {:?}", resource_path));
@@ -482,7 +491,7 @@ pub fn run() {
                 .path()
                 .resource_dir()?
                 .join("models")
-                .join("ggml-base.en.bin");
+                .join(WHISPER_MODEL_FILE);
             let transcriber = if resource_path.exists() {
                 Transcriber::new(resource_path.to_str().unwrap()).ok()
             } else {
