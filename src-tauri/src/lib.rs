@@ -268,45 +268,6 @@ fn unmute_if_needed(state: &State<AppState>) {
     }
 }
 
-#[cfg(test)]
-mod hotkey_tests {
-    use tauri_plugin_global_shortcut::Shortcut;
-
-    /// HotkeyRecorder.vue builds shortcut strings client-side from `e.code`.
-    /// This pins the grammar those strings must satisfy.
-    #[test]
-    fn strings_the_ui_can_emit_all_parse() {
-        for s in [
-            "Cmd+Option+Space", // the shipped default
-            "Command+Alt+Space",
-            "Command+Shift+KeyA",
-            "Control+Digit1",
-            "Command+ArrowUp",
-            "Command+Alt+Minus",
-            "Command+Shift+BracketLeft",
-            "F5",
-        ] {
-            assert!(s.parse::<Shortcut>().is_ok(), "{s} should parse");
-        }
-    }
-
-    /// Configs written by the previous `e.key`-based recorder must keep
-    /// working after the switch to `e.code`.
-    #[test]
-    fn previously_stored_hotkey_formats_still_parse() {
-        for s in ["Command+Shift+.", "Command+Alt+SPACE", "Control+A"] {
-            assert!(s.parse::<Shortcut>().is_ok(), "{s} should still parse");
-        }
-    }
-
-    /// Modifiers must precede the key, and a key is required.
-    #[test]
-    fn rejects_malformed_shortcuts() {
-        assert!("Command+KeyA+Shift".parse::<Shortcut>().is_err());
-        assert!("Command+Shift".parse::<Shortcut>().is_err());
-    }
-}
-
 /// Runs once as the app tears down. Without this, quitting mid-recording
 /// leaves the system muted and the overlay helper process running.
 fn cleanup_on_exit(app: &tauri::AppHandle) {
@@ -615,4 +576,43 @@ pub fn run() {
                 cleanup_on_exit(app_handle);
             }
         });
+}
+
+#[cfg(test)]
+mod hotkey_tests {
+    use tauri_plugin_global_shortcut::Shortcut;
+
+    /// HotkeyRecorder.vue builds shortcut strings client-side from `e.code`.
+    /// This pins the grammar those strings must satisfy.
+    #[test]
+    fn strings_the_ui_can_emit_all_parse() {
+        for s in [
+            "Cmd+Option+Space", // the shipped default
+            "Command+Alt+Space",
+            "Command+Shift+KeyA",
+            "Control+Digit1",
+            "Command+ArrowUp",
+            "Command+Alt+Minus",
+            "Command+Shift+BracketLeft",
+            "F5",
+        ] {
+            assert!(s.parse::<Shortcut>().is_ok(), "{s} should parse");
+        }
+    }
+
+    /// Configs written by the previous `e.key`-based recorder must keep
+    /// working after the switch to `e.code`.
+    #[test]
+    fn previously_stored_hotkey_formats_still_parse() {
+        for s in ["Command+Shift+.", "Command+Alt+SPACE", "Control+A"] {
+            assert!(s.parse::<Shortcut>().is_ok(), "{s} should still parse");
+        }
+    }
+
+    /// Modifiers must precede the key, and a key is required.
+    #[test]
+    fn rejects_malformed_shortcuts() {
+        assert!("Command+KeyA+Shift".parse::<Shortcut>().is_err());
+        assert!("Command+Shift".parse::<Shortcut>().is_err());
+    }
 }

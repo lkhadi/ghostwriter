@@ -27,14 +27,13 @@ impl OverlayHelper {
         if line.starts_with("DIMENSIONS") {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 3 {
-                let width: i32 = parts[1]
-                    .parse()
-                    .map_err(|_| "Invalid width")?;
-                let height: i32 = parts[2]
-                    .parse()
-                    .map_err(|_| "Invalid height")?;
+                let width: i32 = parts[1].parse().map_err(|_| "Invalid width")?;
+                let height: i32 = parts[2].parse().map_err(|_| "Invalid height")?;
                 screen_info::set_cached_dimensions(width, height);
-                println!("[overlay_helper] Received cached dimensions: {}x{}", width, height);
+                println!(
+                    "[overlay_helper] Received cached dimensions: {}x{}",
+                    width, height
+                );
                 return Ok(());
             }
         }
