@@ -9,6 +9,7 @@
 
 - (instancetype)initWithContentURL:(NSURL *)contentURL;
 - (void)showAtX:(CGFloat)x y:(CGFloat)y;
+- (void)showCentered;
 - (void)hide;
 - (void)centerNearBottom;
 - (void)setWindowLevel:(NSInteger)level;
