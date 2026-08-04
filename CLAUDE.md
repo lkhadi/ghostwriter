@@ -36,7 +36,7 @@ npm run tauri build  # Build production Tauri app
 
 ### External Dependencies
 - `overlay-helper/` - Separate macOS helper app for displaying the recording HUD overlay
-- Whisper model: `src-tauri/models/ggml-base.en.bin` (must be placed in resources)
+- Whisper model: `src-tauri/models/ggml-base.bin` — the **multilingual** `ggml-base` weights. Do not rename it to a `.en` form: whisper.cpp is built with `-DWHISPER_USE_COREML` and derives the Core ML encoder path from this filename, so a `.en` name picks up an English-only encoder and produces garbage.
 
 ## Key Behaviors
 
