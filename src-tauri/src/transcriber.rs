@@ -54,10 +54,13 @@ impl Transcriber {
             .map_err(|e| format!("Failed to get segments: {}", e))?;
         let mut text = String::new();
         for i in 0..num_segments {
-            let segment = state
-                .full_get_segment_text(i)
-                .map_err(|e| format!("Failed to get segment text: {}", e))?;
-            text.push_str(&segment);
+            match state.full_get_segment_text(i) {
+                Ok(segment) => text.push_str(&segment),
+                // Whisper can split a multi-byte character across a segment
+                // boundary, which surfaces here as InvalidUtf8. Skip that
+                // segment rather than discarding the whole transcript.
+                Err(e) => eprintln!("Skipping unreadable segment {}: {}", i, e),
+            }
         }
 
         let cleaned = sanitize(&text);

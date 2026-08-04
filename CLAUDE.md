@@ -12,7 +12,7 @@ macOS is the only working target. The `#[cfg(not(target_os = "macos"))]` branche
 
 ```bash
 npm install
-git lfs pull                        # Whisper weights + CoreML encoder are LFS objects
+git lfs pull                        # the Whisper weights are an LFS object
 
 cd overlay-helper && make install    # REQUIRED before running: builds the Obj-C HUD app and
                                      # copies it into src-tauri/overlay-helper/ for bundling
@@ -63,7 +63,9 @@ Both stop paths call `logic_helper::stop_and_transcribe_logic`, which spawns an 
 
 `WhisperContext` is built once in `setup()` and held in `AppState`; the language code is passed per call. Output is aggressively post-filtered for Whisper hallucinations (music glyphs, "Subtitles by …", bare "you", non-alphanumeric output, under 2 chars) and returns an empty string rather than injecting junk.
 
-**Model naming trap:** `src-tauri/models/ggml-base.en.bin` holds the *multilingual* `ggml-base` weights. The `.en` name was kept so the hardcoded path and the sibling `ggml-base.en-encoder.mlmodelc` keep resolving — whisper-rs's `coreml` feature derives the encoder path from the model filename. The path is hardcoded twice in `lib.rs` (setup and `transcribe_test_audio`).
+**The model filename is load-bearing.** `src-tauri/models/ggml-base.bin` holds the multilingual `ggml-base` weights, and `WHISPER_MODEL_FILE` in `lib.rs` is the single source of that name. whisper.cpp is built here with `-DWHISPER_USE_COREML` and derives the Core ML encoder path from the model filename by swapping the extension for `-encoder.mlmodelc`. Renaming the model to a `.en` form would make it pick up an English-only encoder and feed its output to multilingual weights — the dimensions match, so nothing errors and the transcript is simply garbage. This shipped for months; see `git log` for `fix: remove mismatched Core ML encoder`.
+
+Core ML acceleration is currently off (no encoder is bundled); `-DWHISPER_COREML_ALLOW_FALLBACK` means whisper falls back to CPU, at roughly 0.4 s for a 5-second clip.
 
 ### Config (`config.rs`)
 
