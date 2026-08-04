@@ -461,20 +461,34 @@ Update the two `hasNonModifier` / commit checks to test `e.code` against `MODIFI
 
 **Step 3: Surface save failures in the box**
 
-`App.vue`'s `saveHotkey` logs the error but the recorder keeps showing the rejected combination. Revert the display on failure:
+`App.vue`'s `saveHotkey` logs the error but the recorder keeps showing the rejected combination. Revert the display on failure.
+
+> **Corrected during execution.** The original draft of this step set
+> `hotkey.value = ""` and then reassigned, to "force the watcher to fire".
+> That is a no-op: Vue queues the watcher job once and compares the final
+> value against the old value at flush time. On a failed save both are the
+> last-known-good hotkey, so `hasChanged` is false and the callback never
+> runs. Use an explicit exposed revert instead.
+
+Child (`HotkeyRecorder.vue`):
 
 ```js
-async function saveHotkey(newKey) {
-  try {
-    await invoke("save_hotkey", { hotkey: newKey });
-    hotkey.value = newKey;
-    log("Saved hotkey: " + newKey);
+const revertDisplay = () => {
+  isRecording.value = false;
+  currentHotkey.value = props.initialHotkey;
+  displayHotkey.value = props.initialHotkey;
+};
+
+defineExpose({ revertDisplay });
+```
+
+Parent (`App.vue`), with `ref="hotkeyRecorder"` on the component:
+
+```js
   } catch (e) {
     log("Error saving hotkey: " + e);
-    hotkey.value = "";          // force the watcher to fire
-    hotkey.value = await invoke("get_hotkey");  // snap back to what is actually registered
+    hotkeyRecorder.value?.revertDisplay();
   }
-}
 ```
 
 **Step 4: Verify manually**
