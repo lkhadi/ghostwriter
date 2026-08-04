@@ -13,6 +13,7 @@ const showDebug = ref(false);
 const logs = ref([]);
 const autoMuteEnabled = ref(true);
 const selectedLanguage = ref("en");
+const hotkeyRecorder = ref(null);
 
 // Add a log message
 const log = (msg) => {
@@ -49,6 +50,10 @@ async function saveHotkey(newKey) {
     log("Saved hotkey: " + newKey);
   } catch (e) {
     log("Error saving hotkey: " + e);
+    // The backend rejected it and kept the previous binding, so snap the
+    // recorder back instead of leaving a shortcut on screen that never
+    // took effect.
+    hotkeyRecorder.value?.revertDisplay();
   }
 }
 
@@ -154,7 +159,11 @@ async function checkPermissions() {
 
       <div class="section">
         <label>Global Hotkey</label>
-        <HotkeyRecorder :initial-hotkey="hotkey" @update:hotkey="saveHotkey" />
+        <HotkeyRecorder
+          ref="hotkeyRecorder"
+          :initial-hotkey="hotkey"
+          @update:hotkey="saveHotkey"
+        />
         <p class="hint">Press hotkey to Start/Stop recording</p>
       </div>
 

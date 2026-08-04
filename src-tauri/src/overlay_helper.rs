@@ -27,14 +27,13 @@ impl OverlayHelper {
         if line.starts_with("DIMENSIONS") {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 3 {
-                let width: i32 = parts[1]
-                    .parse()
-                    .map_err(|_| "Invalid width")?;
-                let height: i32 = parts[2]
-                    .parse()
-                    .map_err(|_| "Invalid height")?;
+                let width: i32 = parts[1].parse().map_err(|_| "Invalid width")?;
+                let height: i32 = parts[2].parse().map_err(|_| "Invalid height")?;
                 screen_info::set_cached_dimensions(width, height);
-                println!("[overlay_helper] Received cached dimensions: {}x{}", width, height);
+                println!(
+                    "[overlay_helper] Received cached dimensions: {}x{}",
+                    width, height
+                );
                 return Ok(());
             }
         }
@@ -162,6 +161,16 @@ impl OverlayHelper {
 
     pub fn hide(&self) -> Result<(), String> {
         self.send_command("HIDE")
+    }
+
+    /// Asks the helper to exit. Fire-and-forget: the helper terminates
+    /// immediately, so it may die before acking — do not route this
+    /// through `send_command`, which requires the ack.
+    pub fn quit(&self) {
+        if let Ok(mut stream) = UnixStream::connect(SOCKET_PATH) {
+            let _ = writeln!(stream, "QUIT");
+            let _ = stream.flush();
+        }
     }
 
     pub fn set_window_level(&self, level: &str) -> Result<(), String> {

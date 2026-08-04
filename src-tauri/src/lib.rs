@@ -45,6 +45,16 @@ fn get_hotkey(app: tauri::AppHandle) -> Result<String, String> {
     Ok(config.hotkey)
 }
 
+/// Reads the stored config, falling back to defaults if it is absent or
+/// unparseable. Callers rebuild with `..existing` so adding a field to
+/// `AppConfig` can never silently reset it from one of the setters.
+fn load_config(store: &std::sync::Arc<tauri_plugin_store::Store<tauri::Wry>>) -> AppConfig {
+    store
+        .get("config")
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default()
+}
+
 #[tauri::command]
 fn save_hotkey(app: tauri::AppHandle, hotkey: String) -> Result<(), String> {
     println!("[save_hotkey] Called with: {}", hotkey);
@@ -53,47 +63,36 @@ fn save_hotkey(app: tauri::AppHandle, hotkey: String) -> Result<(), String> {
         eprintln!("[save_hotkey] Store error: {}", e);
         e.to_string()
     })?;
+    let existing = load_config(&store);
 
-    // 1. Unregister old if possible
-    println!("[save_hotkey] Unregistering old shortcuts...");
+    // 1. Validate BEFORE touching the live registration, so a bad string
+    //    can never leave the user with no working hotkey.
+    let shortcut = hotkey
+        .parse::<tauri_plugin_global_shortcut::Shortcut>()
+        .map_err(|e| {
+            eprintln!("[save_hotkey] Parse error: {}", e);
+            format!("Invalid hotkey '{}': {}", hotkey, e)
+        })?;
+
+    // 2. Swap, restoring the previous binding if registration fails.
     app.global_shortcut().unregister_all().map_err(|e| {
         eprintln!("[save_hotkey] Unregister error: {}", e);
         e.to_string()
     })?;
 
-    // 2. Register new
-    println!("[save_hotkey] Parsing shortcut: {}", hotkey);
-    let shortcut = hotkey
-        .parse::<tauri_plugin_global_shortcut::Shortcut>()
-        .map_err(|e| {
-            eprintln!("[save_hotkey] Parse error: {}", e);
-            e.to_string()
-        })?;
-
-    println!("[save_hotkey] Registering shortcut...");
-    app.global_shortcut().register(shortcut).map_err(|e| {
+    if let Err(e) = app.global_shortcut().register(shortcut) {
         eprintln!("[save_hotkey] Register error: {}", e);
-        e.to_string()
-    })?;
+        if let Ok(previous) = existing
+            .hotkey
+            .parse::<tauri_plugin_global_shortcut::Shortcut>()
+        {
+            let _ = app.global_shortcut().register(previous);
+        }
+        return Err(format!("Failed to register '{}': {}", hotkey, e));
+    }
 
-    // 3. Save to store
-    println!("[save_hotkey] Saving to store...");
-    // Get existing config to preserve auto_mute_enabled
-    let existing_config: Option<AppConfig> = store
-        .get("config")
-        .and_then(|v| serde_json::from_value(v).ok());
-
-    let config = AppConfig {
-        hotkey: hotkey.clone(),
-        auto_mute_enabled: existing_config
-            .as_ref()
-            .map(|c| c.auto_mute_enabled)
-            .unwrap_or(true),
-        language: existing_config
-            .as_ref()
-            .map(|c| c.language.clone())
-            .unwrap_or_else(|| "en".to_string()),
-    };
+    // 3. Persist.
+    let config = AppConfig { hotkey, ..existing };
     store.set("config".to_string(), json!(config));
     store.save().map_err(|e| {
         eprintln!("[save_hotkey] Save error: {}", e);
@@ -115,22 +114,11 @@ fn get_auto_mute_enabled(app: tauri::AppHandle) -> Result<bool, String> {
 #[tauri::command]
 fn set_auto_mute_enabled(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     let store = app.store("config.json").map_err(|e| e.to_string())?;
-
-    // Get existing config to preserve hotkey
-    let existing_config: Option<AppConfig> = store
-        .get("config")
-        .and_then(|v| serde_json::from_value(v).ok());
+    let existing = load_config(&store);
 
     let config = AppConfig {
-        hotkey: existing_config
-            .as_ref()
-            .map(|c| c.hotkey.clone())
-            .unwrap_or_else(|| "Cmd+Option+Space".to_string()),
         auto_mute_enabled: enabled,
-        language: existing_config
-            .as_ref()
-            .map(|c| c.language.clone())
-            .unwrap_or_else(|| "en".to_string()),
+        ..existing
     };
     store.set("config".to_string(), json!(config));
     store.save().map_err(|e| e.to_string())?;
@@ -148,21 +136,11 @@ fn get_language(app: tauri::AppHandle) -> Result<String, String> {
 #[tauri::command]
 fn set_language(app: tauri::AppHandle, language: String) -> Result<(), String> {
     let store = app.store("config.json").map_err(|e| e.to_string())?;
-
-    let existing_config: Option<AppConfig> = store
-        .get("config")
-        .and_then(|v| serde_json::from_value(v).ok());
+    let existing = load_config(&store);
 
     let config = AppConfig {
-        hotkey: existing_config
-            .as_ref()
-            .map(|c| c.hotkey.clone())
-            .unwrap_or_else(|| "Cmd+Option+Space".to_string()),
-        auto_mute_enabled: existing_config
-            .as_ref()
-            .map(|c| c.auto_mute_enabled)
-            .unwrap_or(true),
-        language: language.clone(),
+        language,
+        ..existing
     };
     store.set("config".to_string(), json!(config));
     store.save().map_err(|e| e.to_string())?;
@@ -290,6 +268,30 @@ fn unmute_if_needed(state: &State<AppState>) {
     }
 }
 
+/// Runs once as the app tears down. Without this, quitting mid-recording
+/// leaves the system muted and the overlay helper process running.
+fn cleanup_on_exit(app: &tauri::AppHandle) {
+    let state = app.state::<AppState>();
+
+    let previous_volume = state.previous_volume.lock().ok().and_then(|v| *v);
+    if let Some(vol) = previous_volume {
+        match unmute_system_audio(vol) {
+            Ok(_) => println!("[exit] system audio restored to volume: {}", vol),
+            Err(e) => eprintln!("[exit] failed to restore volume: {}", e),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let overlay = state.overlay.lock();
+        if let Ok(ref overlay_guard) = overlay {
+            if let Some(helper) = overlay_guard.as_ref() {
+                helper.quit();
+            }
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -398,9 +400,12 @@ pub fn run() {
                         tauri::async_runtime::spawn(async move {
                             let state = app_handle.state::<AppState>();
 
-                            let start_time = {
-                                let pt = state.press_time.lock().unwrap(); // safe unwrap or match
-                                *pt
+                            let start_time = match state.press_time.lock() {
+                                Ok(pt) => *pt,
+                                Err(e) => {
+                                    eprintln!("Press time lock poisoned: {}", e);
+                                    return;
+                                }
                             };
 
                             if let Some(time) = start_time {
@@ -512,14 +517,32 @@ pub fn run() {
                 overlay: Mutex::new(overlay_helper),
             });
 
-            // Register hotkey from config
+            // Register hotkey from config. Never propagate an error here: a
+            // malformed config would panic on every launch, leaving the app
+            // unstartable until the store was deleted by hand.
             let store = app.store("config.json")?;
-            if let Some(config_val) = store.get("config") {
-                let config: AppConfig = serde_json::from_value(config_val)?;
-                let shortcut = config
-                    .hotkey
-                    .parse::<tauri_plugin_global_shortcut::Shortcut>()?;
-                app.global_shortcut().register(shortcut)?;
+            let config = load_config(&store);
+
+            let shortcut = config
+                .hotkey
+                .parse::<tauri_plugin_global_shortcut::Shortcut>()
+                .or_else(|e| {
+                    eprintln!(
+                        "[setup] Invalid hotkey '{}' in config ({}), falling back to default",
+                        config.hotkey, e
+                    );
+                    AppConfig::default()
+                        .hotkey
+                        .parse::<tauri_plugin_global_shortcut::Shortcut>()
+                });
+
+            match shortcut {
+                Ok(shortcut) => {
+                    if let Err(e) = app.global_shortcut().register(shortcut) {
+                        eprintln!("[setup] Failed to register hotkey: {}", e);
+                    }
+                }
+                Err(e) => eprintln!("[setup] No usable hotkey: {}", e),
             }
 
             Ok(())
@@ -540,10 +563,56 @@ pub fn run() {
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                window.hide().unwrap();
+                if let Err(e) = window.hide() {
+                    eprintln!("Failed to hide window on close: {}", e);
+                }
                 api.prevent_close();
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                cleanup_on_exit(app_handle);
+            }
+        });
+}
+
+#[cfg(test)]
+mod hotkey_tests {
+    use tauri_plugin_global_shortcut::Shortcut;
+
+    /// HotkeyRecorder.vue builds shortcut strings client-side from `e.code`.
+    /// This pins the grammar those strings must satisfy.
+    #[test]
+    fn strings_the_ui_can_emit_all_parse() {
+        for s in [
+            "Cmd+Option+Space", // the shipped default
+            "Command+Alt+Space",
+            "Command+Shift+KeyA",
+            "Control+Digit1",
+            "Command+ArrowUp",
+            "Command+Alt+Minus",
+            "Command+Shift+BracketLeft",
+            "F5",
+        ] {
+            assert!(s.parse::<Shortcut>().is_ok(), "{s} should parse");
+        }
+    }
+
+    /// Configs written by the previous `e.key`-based recorder must keep
+    /// working after the switch to `e.code`.
+    #[test]
+    fn previously_stored_hotkey_formats_still_parse() {
+        for s in ["Command+Shift+.", "Command+Alt+SPACE", "Control+A"] {
+            assert!(s.parse::<Shortcut>().is_ok(), "{s} should still parse");
+        }
+    }
+
+    /// Modifiers must precede the key, and a key is required.
+    #[test]
+    fn rejects_malformed_shortcuts() {
+        assert!("Command+KeyA+Shift".parse::<Shortcut>().is_err());
+        assert!("Command+Shift".parse::<Shortcut>().is_err());
+    }
 }
