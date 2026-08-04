@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from "vue";
+import { ref, watch } from "vue";
 
 const props = defineProps({
   initialHotkey: {
@@ -14,37 +14,41 @@ const isRecording = ref(false);
 const currentHotkey = ref(props.initialHotkey);
 const displayHotkey = ref(props.initialHotkey);
 
-// Maps for prettier display
-const keyMap = {
-  " ": "Space",
-  ArrowUp: "Up",
-  ArrowDown: "Down",
-  ArrowLeft: "Left",
-  ArrowRight: "Right",
-  Meta: "Cmd",
-  Control: "Ctrl",
-  Alt: "Option",
-  Shift: "Shift",
-};
+// The parent loads the hotkey asynchronously in onMounted, after setup() has
+// already snapshotted the prop — without this the box stays blank on launch.
+watch(
+  () => props.initialHotkey,
+  (value) => {
+    currentHotkey.value = value;
+    if (!isRecording.value) displayHotkey.value = value;
+  }
+);
 
+const MODIFIER_CODES = [
+  "MetaLeft",
+  "MetaRight",
+  "ControlLeft",
+  "ControlRight",
+  "AltLeft",
+  "AltRight",
+  "ShiftLeft",
+  "ShiftRight",
+];
+
+// e.code is the physical key ("KeyA", "Space", "Digit1", "ArrowUp"), so it is
+// unaffected by Option producing dead keys on macOS — e.key would turn
+// Option+A into "å" and the backend would reject the shortcut.
+// Modifiers must precede the key: global-hotkey rejects "Command+KeyA+Shift".
 const formatKey = (e) => {
   const keys = [];
   if (e.metaKey) keys.push("Command");
   if (e.ctrlKey) keys.push("Control");
-  if (e.altKey) keys.push("Alt"); // "Option" in Tauri usually maps to Alt string or Option
+  if (e.altKey) keys.push("Alt");
   if (e.shiftKey) keys.push("Shift");
 
-  // If the key is not a modifier itself, add it
-  if (
-    !["Meta", "Control", "Alt", "Shift"].includes(e.key)
-  ) {
-    let key = e.key.toUpperCase();
-    if (key === " ") key = "Space";
-    keys.push(key);
-  }
+  if (!MODIFIER_CODES.includes(e.code)) keys.push(e.code);
 
-  // Deduplicate
-  return [...new Set(keys)].join("+");
+  return keys.join("+");
 };
 
 const handleKeyDown = (e) => {
@@ -54,7 +58,7 @@ const handleKeyDown = (e) => {
   e.stopPropagation();
 
   // If user presses Escape, cancel recording
-  if (e.key === "Escape") {
+  if (e.code === "Escape") {
     isRecording.value = false;
     displayHotkey.value = currentHotkey.value; // Revert
     return;
@@ -64,18 +68,12 @@ const handleKeyDown = (e) => {
   const hotkeyString = formatKey(e);
   displayHotkey.value = hotkeyString;
 
-  // We only "commit" if a non-modifier key is pressed OR if we want to allow single keys
-  // For better UX, we usually wait for a non-modifier.
-  // HOWEVER, user asked for "Right Command" specifically. 
-  // If they want to bind JUST a modifier, we might need to allow it.
-  
-  // Logic: If keys array has a non-modifier, stop recording.
-  const hasNonModifier = !["Meta", "Control", "Alt", "Shift"].includes(e.key);
-  
-  if (hasNonModifier) {
-      currentHotkey.value = hotkeyString;
-      emit("update:hotkey", hotkeyString);
-      isRecording.value = false;
+  // Commit once a non-modifier key lands. A shortcut needs exactly one main
+  // key, so modifier-only combinations can never be committed.
+  if (!MODIFIER_CODES.includes(e.code)) {
+    currentHotkey.value = hotkeyString;
+    emit("update:hotkey", hotkeyString);
+    isRecording.value = false;
   }
 };
 
@@ -83,6 +81,16 @@ const startRecording = () => {
   isRecording.value = true;
   displayHotkey.value = "Press keys...";
 };
+
+// Called by the parent when the backend rejects a shortcut, so the box stops
+// showing a combination that was never registered.
+const revertDisplay = () => {
+  isRecording.value = false;
+  currentHotkey.value = props.initialHotkey;
+  displayHotkey.value = props.initialHotkey;
+};
+
+defineExpose({ revertDisplay });
 
 const inputRef = ref(null);
 
