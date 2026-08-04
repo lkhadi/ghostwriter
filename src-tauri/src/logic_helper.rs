@@ -1,12 +1,44 @@
-use crate::audio_control::unmute_system_audio;
 use crate::config::AppConfig;
 use crate::injector::Injector;
 use crate::AppState;
 use tauri::Manager;
 use tauri_plugin_store::StoreExt;
 
+/// Hides the recording HUD when dropped, so every exit path from the
+/// transcription task clears the overlay — including early returns and panics.
+struct HudGuard {
+    app: tauri::AppHandle,
+}
+
+impl Drop for HudGuard {
+    fn drop(&mut self) {
+        #[cfg(target_os = "macos")]
+        {
+            let state = self.app.state::<AppState>();
+            // Bind before matching so the guard is dropped before `state`.
+            let overlay = state.overlay.lock();
+            match overlay {
+                Ok(overlay) => {
+                    if let Some(helper) = overlay.as_ref() {
+                        if let Err(e) = helper.hide() {
+                            eprintln!("Failed to hide overlay: {}", e);
+                        }
+                    }
+                }
+                Err(e) => eprintln!("Overlay lock poisoned while hiding HUD: {}", e),
+            }
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        if let Some(hud) = self.app.get_webview_window("hud") {
+            let _ = hud.hide();
+        }
+    }
+}
+
 pub fn stop_and_transcribe_logic(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
+        let _hud = HudGuard { app: app.clone() };
         let state = app.state::<AppState>();
 
         let audio = {
@@ -62,27 +94,8 @@ pub fn stop_and_transcribe_logic(app: tauri::AppHandle) {
 
         println!("Transcribed: {}", text);
 
-        // Unmute system audio
-        let previous_vol = {
-            match state.previous_volume.lock() {
-                Ok(prev) => *prev,
-                _ => None,
-            }
-        };
-
-        if let Some(vol) = previous_vol {
-            match unmute_system_audio(vol) {
-                Ok(_) => {
-                    println!("System audio restored to volume: {}", vol);
-                    if let Ok(mut prev) = state.previous_volume.lock() {
-                        *prev = None;
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Failed to unmute system audio: {}", e);
-                }
-            }
-        }
+        // Note: system audio is already restored by the caller in lib.rs
+        // before this task is spawned.
 
         // Inject
         let mut injector = match Injector::new() {
@@ -96,22 +109,6 @@ pub fn stop_and_transcribe_logic(app: tauri::AppHandle) {
             eprintln!("Injection error: {}", e);
         }
 
-        // HIDE HUD using overlay helper
-        #[cfg(target_os = "macos")]
-        {
-            let overlay = state.overlay.lock();
-            if let Ok(ref overlay_guard) = overlay {
-                if let Some(helper) = overlay_guard.as_ref() {
-                    if let Err(e) = helper.hide() {
-                        eprintln!("Failed to hide overlay: {}", e);
-                    }
-                }
-            }
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        if let Some(hud) = app.get_webview_window("hud") {
-            let _ = hud.hide();
-        }
+        // HUD is hidden by `_hud` (HudGuard) when this task returns.
     });
 }
