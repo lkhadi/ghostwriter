@@ -45,6 +45,23 @@ impl Drop for DictationGuard {
     }
 }
 
+/// Peak amplitude below which a recording is treated as "no signal".
+///
+/// Normal speech peaks well above 0.05; room tone with a live mic still
+/// registers around 0.01. A buffer under this is not quiet speech, it is a
+/// microphone that delivered nothing.
+const SILENCE_PEAK: f32 = 0.005;
+
+/// Peak and RMS amplitude of a capture buffer.
+fn audio_level(samples: &[f32]) -> (f32, f32) {
+    if samples.is_empty() {
+        return (0.0, 0.0);
+    }
+    let peak = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    let rms = (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt();
+    (peak, rms)
+}
+
 fn configured_language(app: &tauri::AppHandle) -> String {
     app.store("config.json")
         .ok()
@@ -72,6 +89,32 @@ pub fn stop_and_transcribe_logic(app: tauri::AppHandle) {
 
         if audio.is_empty() {
             println!("Audio empty, skipping transcription.");
+            return;
+        }
+
+        // Whisper hallucinates confidently when fed silence, and the
+        // hallucination filter only knows English phrases — so a dead
+        // microphone shows up as "nothing typed" in English and "random
+        // words typed" in other languages. Neither looks like a mic problem.
+        // Check the signal itself and say so.
+        let (peak, rms) = audio_level(&audio);
+        println!(
+            "Captured {} samples ({:.1}s), peak {:.4}, rms {:.4}",
+            audio.len(),
+            audio.len() as f32 / 16000.0,
+            peak,
+            rms
+        );
+
+        if peak < SILENCE_PEAK {
+            emit_error(
+                &app,
+                &format!(
+                    "Microphone produced no signal (peak {:.4}). Check GhostWriter's \
+                     Microphone permission in System Settings and the selected input device.",
+                    peak
+                ),
+            );
             return;
         }
 
@@ -142,4 +185,33 @@ pub fn stop_and_transcribe_logic(app: tauri::AppHandle) {
 
         // HUD hidden and state reset by `_guard` when this task returns.
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reports_zero_level_for_digital_silence() {
+        let (peak, rms) = audio_level(&[0.0; 1000]);
+        assert_eq!(peak, 0.0);
+        assert_eq!(rms, 0.0);
+        assert!(peak < SILENCE_PEAK, "digital silence must trip the check");
+    }
+
+    #[test]
+    fn room_tone_is_not_treated_as_silence() {
+        // ~0.02 peak: a live but quiet microphone.
+        let tone: Vec<f32> = (0..1000).map(|i| 0.02 * ((i as f32) * 0.1).sin()).collect();
+        let (peak, _) = audio_level(&tone);
+        assert!(
+            peak > SILENCE_PEAK,
+            "live mic room tone must pass, got {peak}"
+        );
+    }
+
+    #[test]
+    fn handles_empty_buffer() {
+        assert_eq!(audio_level(&[]), (0.0, 0.0));
+    }
 }
