@@ -47,10 +47,15 @@ impl Drop for DictationGuard {
 
 /// Peak amplitude below which a recording is treated as "no signal".
 ///
-/// Normal speech peaks well above 0.05; room tone with a live mic still
-/// registers around 0.01. A buffer under this is not quiet speech, it is a
-/// microphone that delivered nothing.
-const SILENCE_PEAK: f32 = 0.005;
+/// This exists to catch a microphone that returned *nothing* — macOS hands
+/// back zero-filled buffers when it denies capture, rather than failing. A
+/// live microphone always carries some thermal noise, so anything at or
+/// above this is real audio and belongs to Whisper, however quiet.
+///
+/// Deliberately near-zero: an earlier value of 0.005 was high enough to
+/// reject genuinely quiet speech (a mic at low input gain peaks around
+/// 0.003), which turned this diagnostic into a bug of its own.
+const SILENCE_PEAK: f32 = 0.0001;
 
 /// Peak and RMS amplitude of a capture buffer.
 fn audio_level(samples: &[f32]) -> (f32, f32) {
@@ -201,8 +206,11 @@ mod tests {
 
     #[test]
     fn room_tone_is_not_treated_as_silence() {
-        // ~0.02 peak: a live but quiet microphone.
-        let tone: Vec<f32> = (0..1000).map(|i| 0.02 * ((i as f32) * 0.1).sin()).collect();
+        // ~0.003 peak: a live microphone at low input gain. Quiet, but real
+        // speech lives here and must not be discarded.
+        let tone: Vec<f32> = (0..1000)
+            .map(|i| 0.003 * ((i as f32) * 0.1).sin())
+            .collect();
         let (peak, _) = audio_level(&tone);
         assert!(
             peak > SILENCE_PEAK,
