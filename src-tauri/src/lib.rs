@@ -6,7 +6,6 @@ mod injector;
 mod logic_helper;
 mod transcriber;
 
-#[cfg(target_os = "macos")]
 mod overlay_helper;
 
 use audio_control::{mute_system_audio, unmute_system_audio};
@@ -17,22 +16,62 @@ use logic_helper::stop_and_transcribe_logic;
 use serde_json::json;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+use tauri::Emitter;
 use tauri::Manager;
 use tauri::State;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tauri_plugin_store::StoreExt;
 use transcriber::Transcriber;
 
-#[cfg(target_os = "macos")]
 use overlay_helper::OverlayHelper;
+
+/// A press held longer than this stops recording on release (hold mode);
+/// a shorter press leaves recording running until the next press (toggle mode).
+const HOLD_THRESHOLD: Duration = Duration::from_millis(350);
+
+/// Where dictation is in its lifecycle.
+///
+/// This replaces two independent spawned handlers that inferred state from
+/// `press_time` plus `AudioRecorder::is_recording()`. That flag is flipped
+/// asynchronously by the audio thread, so it still read `true` for some
+/// milliseconds after `stop_recording()` returned — long enough for a press
+/// and its release to both spawn a stop-and-transcribe. Owning the state
+/// behind one mutex makes that unrepresentable.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DictationState {
+    Idle,
+    /// Recording, hotkey still held. `pressed_at` decides toggle vs hold.
+    Armed {
+        pressed_at: Instant,
+    },
+    /// Recording, hotkey released inside the threshold, so recording
+    /// continues until the next press.
+    Toggled,
+    /// Stop requested and transcription in flight; further presses ignored.
+    Stopping,
+}
+
+/// What the UI is told. Kept deliberately small — the frontend only needs to
+/// distinguish "capturing", "working" and "done".
+fn emit_state(app: &tauri::AppHandle, state: &str) {
+    if let Err(e) = app.emit("dictation-state", state) {
+        eprintln!("Failed to emit dictation-state: {}", e);
+    }
+}
+
+fn emit_error(app: &tauri::AppHandle, message: &str) {
+    eprintln!("[dictation] {}", message);
+    if let Err(e) = app.emit("dictation-error", message) {
+        eprintln!("Failed to emit dictation-error: {}", e);
+    }
+}
 
 pub struct AppState {
     pub recorder: Mutex<AudioRecorder>,
     pub transcriber: Mutex<Option<Transcriber>>,
-    pub press_time: Mutex<Option<Instant>>,
+    pub dictation: Mutex<DictationState>,
     /// Stores the previous volume before muting (0-100), None if not muted by us
     pub previous_volume: Mutex<Option<u32>>,
-    #[cfg(target_os = "macos")]
     pub overlay: Mutex<Option<OverlayHelper>>,
 }
 
@@ -168,7 +207,9 @@ fn stop_recording(state: State<AppState>) -> Result<String, String> {
 #[tauri::command]
 fn save_test_audio(state: State<AppState>) -> Result<String, String> {
     let recorder = state.recorder.lock().map_err(|e| e.to_string())?;
-    let audio_data = recorder.get_audio();
+    // Snapshot, not drain: this used to consume the buffer, so pressing
+    // "Save WAV" mid-session destroyed the recording in progress.
+    let audio_data = recorder.snapshot_audio();
 
     // Save to desktop
     let desktop_path = dirs::desktop_dir().ok_or("Could not find desktop")?;
@@ -191,21 +232,7 @@ fn save_test_audio(state: State<AppState>) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn transcribe_test_audio(app: tauri::AppHandle) -> Result<String, String> {
-    let resource_path = app
-        .path()
-        .resource_dir()
-        .map_err(|e| e.to_string())?
-        .join("models")
-        .join("ggml-base.en.bin");
-
-    if !resource_path.exists() {
-        return Err(format!("Model not found at {:?}", resource_path));
-    }
-
-    let transcriber =
-        Transcriber::new(resource_path.to_str().unwrap()).map_err(|e| e.to_string())?;
-
+fn transcribe_test_audio(app: tauri::AppHandle, state: State<AppState>) -> Result<String, String> {
     // Read test_audio.wav from Desktop
     let desktop_path = dirs::desktop_dir().ok_or("Could not find desktop")?;
     let file_path = desktop_path.join("test_audio.wav");
@@ -230,10 +257,16 @@ fn transcribe_test_audio(app: tauri::AppHandle) -> Result<String, String> {
             .unwrap_or_else(|| "en".to_string())
     };
 
-    let text = transcriber
+    // Reuse the context loaded at startup rather than paying to load the
+    // 148 MB model a second time.
+    let transcriber = state.transcriber.lock().map_err(|e| e.to_string())?;
+    let transcriber = transcriber
+        .as_ref()
+        .ok_or("Whisper model was not loaded at startup")?;
+
+    transcriber
         .transcribe(&samples, &language)
-        .map_err(|e| e.to_string())?;
-    Ok(text)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -243,28 +276,35 @@ fn inject_test_text(text: String) -> Result<String, String> {
     Ok("Text injected".to_string())
 }
 
-/// Helper function to unmute system audio if we muted it
-fn unmute_if_needed(state: &State<AppState>) {
+/// Restores system audio if we muted it.
+///
+/// `osascript` is a subprocess, so this runs on the blocking pool rather than
+/// stalling an async worker mid-dictation.
+fn unmute_if_needed(app: tauri::AppHandle) {
     let previous_vol = {
-        match state.previous_volume.lock() {
+        let state = app.state::<AppState>();
+        let guard = state.previous_volume.lock();
+        match guard {
             Ok(prev) => *prev,
             _ => None,
         }
     };
 
-    if let Some(vol) = previous_vol {
-        match unmute_system_audio(vol) {
-            Ok(_) => {
-                println!("System audio restored to volume: {}", vol);
-                if let Ok(mut prev) = state.previous_volume.lock() {
-                    *prev = None;
-                }
-            }
-            Err(e) => {
-                eprintln!("Failed to unmute system audio: {}", e);
+    let Some(vol) = previous_vol else {
+        return;
+    };
+
+    tauri::async_runtime::spawn_blocking(move || match unmute_system_audio(vol) {
+        Ok(_) => {
+            println!("System audio restored to volume: {}", vol);
+            let state = app.state::<AppState>();
+            let previous = state.previous_volume.lock();
+            if let Ok(mut prev) = previous {
+                *prev = None;
             }
         }
-    }
+        Err(e) => eprintln!("Failed to unmute system audio: {}", e),
+    });
 }
 
 /// Runs once as the app tears down. Without this, quitting mid-recording
@@ -280,7 +320,6 @@ fn cleanup_on_exit(app: &tauri::AppHandle) {
         }
     }
 
-    #[cfg(target_os = "macos")]
     {
         let overlay = state.overlay.lock();
         if let Ok(ref overlay_guard) = overlay {
@@ -291,6 +330,152 @@ fn cleanup_on_exit(app: &tauri::AppHandle) {
     }
 }
 
+/// Reads `auto_mute_enabled` without holding any lock the caller cares about.
+fn auto_mute_enabled(app: &tauri::AppHandle) -> bool {
+    app.store("config.json")
+        .ok()
+        .and_then(|s| s.get("config"))
+        .and_then(|c| serde_json::from_value::<AppConfig>(c).ok())
+        .map(|c| c.auto_mute_enabled)
+        .unwrap_or(true)
+}
+
+/// Hotkey down.
+///
+/// `Idle` starts recording; `Toggled` stops it. `Armed` (key repeat) and
+/// `Stopping` (transcription in flight) are ignored.
+async fn on_hotkey_pressed(app: tauri::AppHandle) {
+    let state = app.state::<AppState>();
+
+    let current = match state.dictation.lock() {
+        Ok(guard) => *guard,
+        Err(e) => {
+            eprintln!("Dictation state lock poisoned: {}", e);
+            return;
+        }
+    };
+
+    match current {
+        DictationState::Idle => {
+            // Start capture first: if the device cannot be opened we must not
+            // mute the user's audio or show a HUD for a recording that is not
+            // happening.
+            let start_result = match state.recorder.lock() {
+                Ok(mut recorder) => recorder.start_recording(),
+                Err(e) => Err(format!("Recorder lock poisoned: {}", e).into()),
+            };
+
+            if let Err(e) = start_result {
+                emit_error(&app, &format!("Could not start recording: {}", e));
+                return;
+            }
+
+            if let Ok(mut guard) = state.dictation.lock() {
+                *guard = DictationState::Armed {
+                    pressed_at: Instant::now(),
+                };
+            }
+            emit_state(&app, "recording");
+
+            // Show the HUD before muting: muting shells out to osascript twice
+            // and used to delay the overlay by 100-300 ms.
+            {
+                let overlay = state.overlay.lock();
+                if let Ok(ref guard) = overlay {
+                    if let Some(helper) = guard.as_ref() {
+                        if let Err(e) = helper.show_centered_bottom() {
+                            eprintln!("Failed to show overlay: {}", e);
+                        }
+                    }
+                }
+            }
+
+            if auto_mute_enabled(&app) {
+                let app_for_mute = app.clone();
+                // osascript is a subprocess; keep it off the async runtime.
+                tauri::async_runtime::spawn_blocking(move || match mute_system_audio() {
+                    Ok(previous) => {
+                        let state = app_for_mute.state::<AppState>();
+                        if let Ok(mut prev) = state.previous_volume.lock() {
+                            *prev = Some(previous);
+                        }
+                        println!("System audio muted (previous volume: {})", previous);
+                    }
+                    Err(e) => eprintln!("Failed to mute system audio: {}", e),
+                });
+            }
+        }
+
+        DictationState::Toggled => {
+            if let Ok(mut guard) = state.dictation.lock() {
+                *guard = DictationState::Stopping;
+            }
+            println!("Toggle off");
+            stop_recording_and_transcribe(app.clone());
+        }
+
+        DictationState::Armed { .. } | DictationState::Stopping => {
+            // Key repeat while held, or a press during transcription.
+        }
+    }
+}
+
+/// Hotkey up. Only `Armed` is meaningful: long press stops, short press
+/// switches to toggle mode.
+async fn on_hotkey_released(app: tauri::AppHandle) {
+    let state = app.state::<AppState>();
+
+    let pressed_at = {
+        let mut guard = match state.dictation.lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                eprintln!("Dictation state lock poisoned: {}", e);
+                return;
+            }
+        };
+
+        match *guard {
+            DictationState::Armed { pressed_at } => {
+                if pressed_at.elapsed() > HOLD_THRESHOLD {
+                    *guard = DictationState::Stopping;
+                    Some(pressed_at)
+                } else {
+                    *guard = DictationState::Toggled;
+                    None
+                }
+            }
+            // Includes a release whose task outran its own press.
+            _ => return,
+        }
+    };
+
+    match pressed_at {
+        Some(pressed_at) => {
+            println!("Long press ({:?}) - stopping", pressed_at.elapsed());
+            stop_recording_and_transcribe(app.clone());
+        }
+        None => println!("Short press - kept recording (toggle mode)"),
+    }
+}
+
+/// Stops capture, restores volume, and hands off to transcription.
+/// The caller has already moved the state machine to `Stopping`.
+fn stop_recording_and_transcribe(app: tauri::AppHandle) {
+    {
+        let state = app.state::<AppState>();
+        let recorder = state.recorder.lock();
+        if let Ok(mut recorder) = recorder {
+            if let Err(e) = recorder.stop_recording() {
+                eprintln!("Failed to stop recording: {}", e);
+            }
+        }
+    }
+
+    emit_state(&app, "transcribing");
+    unmute_if_needed(app.clone());
+    stop_and_transcribe_logic(app);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -299,146 +484,19 @@ pub fn run() {
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(move |app, shortcut, event| {
                     let app_handle = app.clone();
-
-                    if event.state() == ShortcutState::Pressed {
-                        println!("Shortcut Pressed: {:?}", shortcut);
-                        tauri::async_runtime::spawn(async move {
-                            let state = app_handle.state::<AppState>();
-
-                            // RECORD START LOGIC
-                            let mut recorder = match state.recorder.lock() {
-                                Ok(g) => g,
-                                Err(e) => {
-                                    eprintln!("Recorder lock error: {}", e);
-                                    return;
-                                }
-                            };
-
-                            if !recorder.is_recording() {
-                                // START RECORDING
-                                println!("Starting recording...");
-                                if recorder.start_recording().is_ok() {
-                                    // Check if auto-mute is enabled
-                                    let auto_mute_enabled = {
-                                        let store = app_handle.store("config.json").ok();
-                                        store
-                                            .and_then(|s| s.get("config"))
-                                            .and_then(|c| {
-                                                serde_json::from_value::<AppConfig>(c).ok()
-                                            })
-                                            .map(|c| c.auto_mute_enabled)
-                                            .unwrap_or(true)
-                                    };
-
-                                    // MUTE SYSTEM AUDIO (if enabled)
-                                    if auto_mute_enabled {
-                                        match mute_system_audio() {
-                                            Ok(previous_vol) => {
-                                                if let Ok(mut prev) = state.previous_volume.lock() {
-                                                    *prev = Some(previous_vol);
-                                                }
-                                                println!(
-                                                    "System audio muted (previous volume: {})",
-                                                    previous_vol
-                                                );
-                                            }
-                                            Err(e) => {
-                                                eprintln!("Failed to mute system audio: {}", e);
-                                            }
-                                        }
-                                    }
-
-                                    if let Ok(mut pt) = state.press_time.lock() {
-                                        *pt = Some(Instant::now());
-                                    }
-
-                                    // SHOW HUD centered near bottom of screen (macOS)
-                                    #[cfg(target_os = "macos")]
-                                    {
-                                        let overlay = state.overlay.lock();
-                                        if let Ok(ref overlay_guard) = overlay {
-                                            if let Some(helper) = overlay_guard.as_ref() {
-                                                if let Err(e) = helper.show_centered_bottom() {
-                                                    eprintln!("Failed to show overlay: {}", e);
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    #[cfg(not(target_os = "macos"))]
-                                    if let Some(hud) = app_handle.get_webview_window("hud") {
-                                        let mouse = Mouse::get_mouse_position();
-                                        if let Mouse::Position { x, y } = mouse {
-                                            let new_x = x - 110;
-                                            let new_y = y - 80;
-                                            let _ = hud.set_position(tauri::Position::Physical(
-                                                tauri::PhysicalPosition { x: new_x, y: new_y },
-                                            ));
-                                        }
-                                        let _ = hud.show();
-                                    }
-                                }
-                            } else {
-                                // ALREADY RECORDING - TOGGLE OFF?
-                                // If we are here, it means we pressed again while recording.
-                                // This is the "Toggle Off" action.
-                                println!("Toggle Off (Pressed again)");
-                                let _ = recorder.stop_recording();
-                                drop(recorder); // Release lock before transcribe
-
-                                // Unmute system audio
-                                unmute_if_needed(&state);
-
-                                // Spawn transcribe task logic (helper needed or inline)
-                                stop_and_transcribe_logic(app_handle.clone());
-                            }
-                        });
-                    } else if event.state() == ShortcutState::Released {
-                        println!("Shortcut Released: {:?}", shortcut);
-                        // Check for HOLD logic
-                        tauri::async_runtime::spawn(async move {
-                            let state = app_handle.state::<AppState>();
-
-                            let start_time = match state.press_time.lock() {
-                                Ok(pt) => *pt,
-                                Err(e) => {
-                                    eprintln!("Press time lock poisoned: {}", e);
-                                    return;
-                                }
-                            };
-
-                            if let Some(time) = start_time {
-                                let duration = time.elapsed();
-                                println!("Press duration: {:?}", duration);
-
-                                if duration > Duration::from_millis(350) {
-                                    // LONG PRESS -> STOP RECORDING (Hold Mode)
-                                    let mut recorder = match state.recorder.lock() {
-                                        Ok(g) => g,
-                                        Err(_) => return,
-                                    };
-
-                                    if recorder.is_recording() {
-                                        println!("Long press detected - Stopping.");
-                                        let _ = recorder.stop_recording();
-                                        drop(recorder);
-
-                                        // Unmute system audio
-                                        unmute_if_needed(&state);
-
-                                        // Reset press time so we don't trigger again
-                                        if let Ok(mut pt) = state.press_time.lock() {
-                                            *pt = None;
-                                        }
-                                        stop_and_transcribe_logic(app_handle.clone());
-                                    }
-                                } else {
-                                    // SHORT PRESS -> DETECT TOGGLE MODE
-                                    // Do nothing. Keep recording.
-                                    println!("Short press detected - Kept recording (Toggle Mode)");
-                                }
-                            }
-                        });
+                    match event.state() {
+                        ShortcutState::Pressed => {
+                            println!("Shortcut pressed: {:?}", shortcut);
+                            tauri::async_runtime::spawn(async move {
+                                on_hotkey_pressed(app_handle).await
+                            });
+                        }
+                        ShortcutState::Released => {
+                            println!("Shortcut released: {:?}", shortcut);
+                            tauri::async_runtime::spawn(async move {
+                                on_hotkey_released(app_handle).await
+                            });
+                        }
                     }
                 })
                 .build(),
@@ -494,7 +552,6 @@ pub fn run() {
             };
 
             // Init Overlay Helper (macOS)
-            #[cfg(target_os = "macos")]
             let overlay_helper = match OverlayHelper::new() {
                 Ok(helper) => {
                     println!("Overlay helper started successfully");
@@ -510,9 +567,8 @@ pub fn run() {
             app.manage(AppState {
                 recorder: Mutex::new(AudioRecorder::new()),
                 transcriber: Mutex::new(transcriber),
-                press_time: Mutex::new(None),
+                dictation: Mutex::new(DictationState::Idle),
                 previous_volume: Mutex::new(None),
-                #[cfg(target_os = "macos")]
                 overlay: Mutex::new(overlay_helper),
             });
 

@@ -2,7 +2,9 @@
 
 A macOS voice dictation desktop application built with Tauri 2 + Vue 3 + Rust. It records audio via a global hotkey, transcribes speech to text using Whisper, and injects the transcribed text into the active application.
 
-> **Cross-Platform Status**: Currently optimized for macOS. The core functionality (record → transcribe → inject) uses cross-platform libraries (enigo, cpal, Whisper) and could be extended to Windows/Linux by replacing the macOS-specific HUD overlay with a Tauri webview-based alternative.
+> **Platform status**: macOS only. Earlier versions carried `cfg(not(target_os = "macos"))` branches, but they referenced an unimported symbol and a window the app never declared, so they could not compile and never ran — they have been removed rather than left as a misleading promise.
+>
+> The record → transcribe → inject core does use cross-platform libraries (cpal, whisper-rs, enigo). A real port would need: a replacement for the Objective-C `NSPanel` HUD helper and its Unix-socket protocol, a substitute for the `osascript` auto-mute, and platform equivalents for the Accessibility and Microphone permission flows.
 
 ## Features
 
