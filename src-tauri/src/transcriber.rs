@@ -60,55 +60,95 @@ impl Transcriber {
             text.push_str(&segment);
         }
 
-        // Sanitize text - remove music notes and other unwanted characters
-        // Sanitize text - remove music notes and other unwanted characters
-        let mut cleaned_text = text
-            .replace("♪", "")
-            .replace("♫", "")
-            .replace("♬", "")
-            .replace("♭", "")
-            .replace("♮", "")
-            .replace("♯", "")
-            .trim()
-            .to_string();
-
-        // Common Whisper hallucinations to filter out
-        let hallucinations = [
-            "Subtitles by",
-            "Amara.org",
-            "Thank you",
-            "Translated by",
-            "captioned by",
-        ];
-
-        for h in hallucinations.iter() {
-            if cleaned_text.contains(h) {
-                cleaned_text = String::new();
-                break;
-            }
+        let cleaned = sanitize(&text);
+        if is_hallucination(&cleaned) {
+            return Ok(String::new());
         }
 
-        // Check for specific "you" or "you." hallucination
-        if cleaned_text == "you"
-            || cleaned_text == "you."
-            || cleaned_text == "You"
-            || cleaned_text == "You."
-        {
-            cleaned_text = String::new();
-        }
+        Ok(cleaned)
+    }
+}
 
-        // Remove repeated dots or spaces (e.g. ". . . .")
-        // Simple manual check for repetitive non-alphanumeric content
-        let alphanumeric_count = cleaned_text.chars().filter(|c| c.is_alphanumeric()).count();
-        if alphanumeric_count == 0 {
-            cleaned_text = String::new();
-        }
+const MUSIC_GLYPHS: &[char] = &['♪', '♫', '♬', '♭', '♮', '♯'];
 
-        // Final sanity check for short length
-        if cleaned_text.len() < 2 {
-            cleaned_text = String::new();
-        }
+/// Phrases Whisper emits as an ENTIRE transcript when fed silence or noise.
+/// Compared against the whole normalized transcript — never as substrings,
+/// because "thank you" is ordinary dictation.
+const FULL_TEXT_HALLUCINATIONS: &[&str] = &[
+    "you",
+    "thank you",
+    "thanks for watching",
+    "please subscribe",
+];
 
-        Ok(cleaned_text)
+fn sanitize(text: &str) -> String {
+    text.chars()
+        .filter(|c| !MUSIC_GLYPHS.contains(c))
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+/// Trim, drop trailing sentence punctuation, lowercase.
+fn normalize_for_match(text: &str) -> String {
+    text.trim()
+        .trim_end_matches(|c: char| matches!(c, '.' | '!' | '?') || c.is_whitespace())
+        .trim()
+        .to_lowercase()
+}
+
+fn is_hallucination(text: &str) -> bool {
+    let normalized = normalize_for_match(text);
+    if normalized.is_empty() {
+        return true;
+    }
+    // Whisper's subtitle-credit artifact; this domain never appears in dictation.
+    if normalized.contains("amara.org") {
+        return true;
+    }
+    // Nothing to type if there isn't a single alphanumeric character.
+    if !normalized.chars().any(|c| c.is_alphanumeric()) {
+        return true;
+    }
+    FULL_TEXT_HALLUCINATIONS.contains(&normalized.as_str())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keeps_dictation_that_contains_a_hallucination_phrase() {
+        assert!(!is_hallucination(
+            "Thank you for the update, I'll review it tonight"
+        ));
+    }
+
+    #[test]
+    fn drops_bare_thank_you() {
+        assert!(is_hallucination("Thank you."));
+        assert!(is_hallucination("thank you"));
+    }
+
+    #[test]
+    fn drops_amara_subtitle_credit() {
+        assert!(is_hallucination("Subtitles by the Amara.org community"));
+    }
+
+    #[test]
+    fn drops_empty_and_punctuation_only() {
+        assert!(is_hallucination("   "));
+        assert!(is_hallucination("..."));
+    }
+
+    #[test]
+    fn keeps_short_real_words() {
+        assert!(!is_hallucination("no"));
+        assert!(!is_hallucination("A"));
+    }
+
+    #[test]
+    fn strips_music_glyphs() {
+        assert_eq!(sanitize("♪ hello ♪"), "hello");
     }
 }
