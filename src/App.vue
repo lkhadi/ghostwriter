@@ -1,12 +1,11 @@
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { listen } from "@tauri-apps/api/event";
 import HotkeyRecorder from "./components/HotkeyRecorder.vue";
-import Hud from "./components/Hud.vue";
 
-const currentLabel = ref("");
 const isRecording = ref(false);
+const isTranscribing = ref(false);
 const statusMsg = ref("Ready");
 const hotkey = ref("");
 const showDebug = ref(false);
@@ -22,16 +21,35 @@ const log = (msg) => {
   statusMsg.value = msg;
 };
 
-onMounted(async () => {
-    // Determine which window this is
-    const win = getCurrentWebviewWindow();
-    currentLabel.value = win.label;
+let unlisten = [];
 
-    if (currentLabel.value === 'main') {
-        loadHotkey();
-        loadAutoMute();
-        loadLanguage();
-    }
+onMounted(async () => {
+  loadHotkey();
+  loadAutoMute();
+  loadLanguage();
+
+  // The hotkey is handled entirely in Rust, so without these the UI has no
+  // idea whether dictation is running.
+  unlisten.push(
+    await listen("dictation-state", ({ payload }) => {
+      isRecording.value = payload === "recording";
+      isTranscribing.value = payload === "transcribing";
+      if (payload === "recording") log("Recording…");
+      if (payload === "transcribing") log("Transcribing…");
+      if (payload === "idle") log("Ready");
+    })
+  );
+
+  unlisten.push(
+    await listen("dictation-error", ({ payload }) => {
+      log("Error: " + payload);
+    })
+  );
+});
+
+onUnmounted(() => {
+  unlisten.forEach((off) => off());
+  unlisten = [];
 });
 
 async function loadHotkey() {
@@ -146,15 +164,14 @@ async function checkPermissions() {
 </script>
 
 <template>
-  <!-- HUD WINDOW -->
-  <Hud v-if="currentLabel === 'hud'" />
-
-  <!-- MAIN WINDOW -->
-  <div v-else class="app-container">
+  <div class="app-container">
     <div class="glass-card">
       <div class="header">
         <h1>GhostWriter</h1>
-        <div class="status-indicator" :class="{ active: isRecording }"></div>
+        <div
+          class="status-indicator"
+          :class="{ active: isRecording, busy: isTranscribing }"
+        ></div>
       </div>
 
       <div class="section">
@@ -287,6 +304,12 @@ h1 {
   background: #ff3b30;
   box-shadow: 0 0 10px #ff3b30;
   animation: breathe 2s infinite;
+}
+
+.status-indicator.busy {
+  background: #ff9f0a;
+  box-shadow: 0 0 10px #ff9f0a;
+  animation: breathe 1s infinite;
 }
 
 @keyframes breathe {
