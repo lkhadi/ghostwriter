@@ -2,18 +2,36 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Required for CoreAudio system audio control -->
+    <!--
+      GhostWriter cannot run under App Sandbox.
+
+      The previous version of this file set com.apple.security.app-sandbox to
+      true. That had no effect only because unsigned builds skip codesigning
+      entirely; the day this app is signed with a real identity, a sandboxed
+      GhostWriter would be unable to:
+
+        - post synthetic keyboard events into other applications (enigo),
+          which is the entire point of the app
+        - spawn and pkill the external GhostWriterOverlayHelper process
+        - bind the Unix domain socket the HUD protocol runs over
+        - write the debug WAV to ~/Desktop
+
+      It also declared com.apple.security.accessibility, which is not a real
+      entitlement key — Accessibility is granted through TCC at runtime, not
+      claimed in an entitlements file.
+
+      Distribution therefore means Developer ID + notarization, not the Mac
+      App Store.
+    -->
     <key>com.apple.security.app-sandbox</key>
-    <true/>
+    <false/>
+
+    <!-- Microphone capture for dictation. -->
     <key>com.apple.security.device.audio-input</key>
     <true/>
-    <key>com.apple.security.temporary-exception.audio-unit-host</key>
-    <true/>
-    <!-- Allow Apple Events for accessibility/injection -->
+
+    <!-- osascript is used for the auto-mute feature. -->
     <key>com.apple.security.automation.apple-events</key>
-    <true/>
-    <!-- Allow accessibility -->
-    <key>com.apple.security.accessibility</key>
     <true/>
 </dict>
 </plist>

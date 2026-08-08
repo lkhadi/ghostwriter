@@ -33,7 +33,16 @@
 - (void)setupSocket {
     NSLog(@"SocketServer: Setting up socket");
 
-    NSString *socketPath = @"/tmp/ghostwriter_overlay.sock";
+    // Per-user temp dir, not world-writable /tmp: anything able to connect
+    // here can show, hide or terminate the overlay. Must stay in sync with
+    // socket_path() in src-tauri/src/overlay_helper.rs, which uses $TMPDIR.
+    NSString *socketPath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"ghostwriter_overlay.sock"];
+    NSLog(@"SocketServer: Socket path: %@", socketPath);
+
+    if ([socketPath length] >= sizeof(((struct sockaddr_un *)0)->sun_path)) {
+        NSLog(@"ERROR: Socket path too long for sockaddr_un: %@", socketPath);
+        return;
+    }
 
     // Remove existing socket if present
     [[NSFileManager defaultManager] removeItemAtPath:socketPath error:nil];

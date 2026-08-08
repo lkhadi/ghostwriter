@@ -129,7 +129,7 @@ const inputRef = ref(null);
   width: 100%;
   text-align: center;
   color: #fff;
-  font-family: 'Inter', sans-serif;
+  font-family: inherit;
   font-size: 14px;
   cursor: pointer;
   transition: all 0.2s ease;
