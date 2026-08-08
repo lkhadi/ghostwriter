@@ -102,13 +102,8 @@
 - (void)handleClient:(int)clientSocket {
     NSLog(@"SocketServer: Handling client...");
 
-    // Send screen dimensions immediately when client connects
-    NSRect screenFrame = [[NSScreen mainScreen] visibleFrame];
-    NSInteger screenWidth = (NSInteger)screenFrame.size.width;
-    NSInteger screenHeight = (NSInteger)screenFrame.size.height;
-    NSString *dimCommand = [NSString stringWithFormat:@"DIMENSIONS %ld %ld\n", (long)screenWidth, (long)screenHeight];
-    NSLog(@"SocketServer: Sending dimensions: %@", dimCommand);
-    write(clientSocket, [dimCommand UTF8String], [dimCommand length]);
+    // No dimension handshake: the client no longer computes geometry, so
+    // every command used to pay for a screen query it never needed.
 
     char buffer[256];
     ssize_t bytesRead;
@@ -132,7 +127,17 @@
     command = [command stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     NSLog(@"SocketServer: Processing command: %@", command);
 
-    if ([command hasPrefix:@"SHOW"]) {
+    // NOTE: this exact-match must stay ABOVE the hasPrefix:@"SHOW" branch —
+    // "SHOW_CENTERED" also has the prefix "SHOW", and would otherwise fall
+    // into the coordinate parser, find fewer than 3 components, and be
+    // silently ignored.
+    if ([command isEqualToString:@"SHOW_CENTERED"]) {
+        NSLog(@"SocketServer: Showing HUD centered");
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self.hudPanel showCentered];
+        });
+    } else if ([command hasPrefix:@"SHOW"]) {
         // Parse: SHOW x y
         NSArray *components = [command componentsSeparatedByString:@" "];
         if (components.count >= 3) {

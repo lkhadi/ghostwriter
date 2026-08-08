@@ -7,6 +7,13 @@
 #import <WebKit/WebKit.h>
 #import <CoreGraphics/CoreGraphics.h>
 
+// HUD geometry. Owned here rather than passed in over the socket: this
+// process runs on the main thread with direct NSScreen access, including
+// visibleFrame.origin, which a cross-process size-only handshake loses.
+static const CGFloat kHUDWidth = 220.0;
+static const CGFloat kHUDHeight = 60.0;
+static const CGFloat kHUDBottomMargin = 100.0;
+
 @interface HUDPanel () <WKNavigationDelegate>
 @property (nonatomic, strong) WKWebView *webView;
 @end
@@ -43,7 +50,7 @@
 }
 
 - (instancetype)initWithContentURL:(NSURL *)contentURL {
-    NSRect frame = NSMakeRect(0, 0, 220, 60);
+    NSRect frame = NSMakeRect(0, 0, kHUDWidth, kHUDHeight);
     self = [super initWithContentRect:frame
                            styleMask:NSWindowStyleMaskBorderless
                              backing:NSBackingStoreBuffered
@@ -68,7 +75,9 @@
         self.backgroundColor = [NSColor clearColor];
         self.opaque = NO;
         self.hasShadow = YES;
-        self.ignoresMouseEvents = NO;
+        // Passive indicator: never intercept clicks meant for the app below.
+        // It cannot become key either, so clicks used to land nowhere at all.
+        self.ignoresMouseEvents = YES;
         self.releasedWhenClosed = NO;
 
         // Hide standard window buttons
@@ -119,34 +128,36 @@
              finalFrame.origin.x, finalFrame.origin.y,
              finalFrame.size.width, finalFrame.size.height);
 
+    // No makeKeyAndOrderFront: canBecomeKeyWindow returns NO, so it would
+    // do nothing beyond what orderFrontRegardless already did.
     [self orderFrontRegardless];
-    [self makeKeyAndOrderFront:nil];
 }
 
 - (void)centerNearBottom {
-    NSRect screenFrame = [[NSScreen mainScreen] visibleFrame];
-    NSLog(@"Screen visible frame: %.0f x %.0f, size: %.0f x %.0f",
-             screenFrame.origin.x, screenFrame.origin.y,
-             screenFrame.size.width, screenFrame.size.height);
+    // visibleFrame uses bottom-left origin coordinates and already excludes
+    // the menu bar and Dock. On a multi-display setup its origin is often
+    // non-zero or negative, so it must be added rather than assumed to be
+    // (0,0). Adding size.height here would place the HUD near the TOP.
+    NSRect visible = [[NSScreen mainScreen] visibleFrame];
 
-    CGFloat overlayWidth = 220.0;
-    CGFloat overlayHeight = 60.0;
+    CGFloat x = visible.origin.x + (visible.size.width - kHUDWidth) / 2.0;
+    CGFloat y = visible.origin.y + kHUDBottomMargin;
 
-    // Center horizontally
-    CGFloat x = (screenFrame.size.width - overlayWidth) / 2.0 + screenFrame.origin.x;
-
-    // Position near bottom (100px from bottom edge)
-    CGFloat y = screenFrame.origin.y + screenFrame.size.height - overlayHeight - 100.0;
-
-    NSLog(@"Calculated center-bottom position: x: %.0f, y: %.0f", x, y);
+    NSLog(@"Centering HUD on visible frame %.0f,%.0f %.0fx%.0f -> %.0f,%.0f",
+          visible.origin.x, visible.origin.y,
+          visible.size.width, visible.size.height, x, y);
 
     [self setFrameOrigin:NSMakePoint(x, y)];
 
-    // Verify final position
     NSRect finalFrame = self.frame;
-    NSLog(@"Final frame after center: %.0f x %.0f, size: %.0f x %.0f",
-             finalFrame.origin.x, finalFrame.origin.y,
-             finalFrame.size.width, finalFrame.size.height);
+    NSLog(@"Final frame: %.0f,%.0f size %.0fx%.0f",
+          finalFrame.origin.x, finalFrame.origin.y,
+          finalFrame.size.width, finalFrame.size.height);
+}
+
+- (void)showCentered {
+    [self centerNearBottom];
+    [self orderFrontRegardless];
 }
 
 - (void)hide {

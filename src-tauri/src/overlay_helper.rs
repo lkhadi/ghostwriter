@@ -1,5 +1,3 @@
-use crate::screen_info;
-
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -10,35 +8,7 @@ use std::time::Duration;
 const SOCKET_PATH: &str = "/tmp/ghostwriter_overlay.sock";
 
 pub struct OverlayHelper {
-    _process: Mutex<Option<Child>>,
-}
-
-impl OverlayHelper {
-    /// Receive screen dimensions from the helper app.
-    /// The helper sends DIMENSIONS <width> <height> immediately upon connection.
-    fn receive_dimensions(stream: &mut UnixStream) -> Result<(), String> {
-        let mut reader = BufReader::new(stream);
-        let mut line = String::new();
-        reader
-            .read_line(&mut line)
-            .map_err(|e| format!("Failed to read dimensions: {}", e))?;
-
-        let line = line.trim();
-        if line.starts_with("DIMENSIONS") {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 3 {
-                let width: i32 = parts[1].parse().map_err(|_| "Invalid width")?;
-                let height: i32 = parts[2].parse().map_err(|_| "Invalid height")?;
-                screen_info::set_cached_dimensions(width, height);
-                println!(
-                    "[overlay_helper] Received cached dimensions: {}x{}",
-                    width, height
-                );
-                return Ok(());
-            }
-        }
-        Err(format!("Unexpected dimensions message: {}", line))
-    }
+    process: Mutex<Option<Child>>,
 }
 
 impl OverlayHelper {
@@ -74,23 +44,24 @@ impl OverlayHelper {
         ];
 
         println!("Searching for helper app...");
-        let mut launched = false;
+        let mut child = None;
         for helper_path in helper_paths.iter() {
             let path_str = helper_path.to_string_lossy();
             let exists = helper_path.exists();
             println!("Checking path: {}, exists: {}", path_str, exists);
             if exists {
                 println!("Launching helper from: {}", path_str);
-                if Self::launch_helper(helper_path).is_ok() {
-                    launched = true;
+                if let Ok(spawned) = Self::launch_helper(helper_path) {
+                    child = Some(spawned);
                     break;
                 }
             }
         }
 
-        if !launched {
-            return Err("Helper app not found in any expected location".to_string());
-        }
+        let child = match child {
+            Some(child) => child,
+            None => return Err("Helper app not found in any expected location".to_string()),
+        };
 
         let mut attempts = 0;
         while attempts < 50 {
@@ -106,7 +77,7 @@ impl OverlayHelper {
         }
 
         Ok(Self {
-            _process: Mutex::new(None),
+            process: Mutex::new(Some(child)),
         })
     }
 
@@ -139,24 +110,13 @@ impl OverlayHelper {
         std::thread::sleep(Duration::from_millis(200));
     }
 
-    pub fn show(&self, x: i32, y: i32) -> Result<(), String> {
-        self.send_command(&format!("SHOW {} {}", x, y))
-    }
-
+    /// Shows the HUD centered near the bottom of the active display.
+    ///
+    /// Geometry lives in the helper, which runs on the main thread with
+    /// direct NSScreen access — including `visibleFrame.origin`, which
+    /// matters as soon as more than one display is attached.
     pub fn show_centered_bottom(&self) -> Result<(), String> {
-        // Calculate center position near bottom of screen
-        let screen_width = screen_info::get_screen_width();
-        let screen_height = screen_info::get_screen_height();
-
-        // Overlay dimensions
-        let overlay_width = 220;
-        let overlay_height = 60;
-
-        // Center horizontally, position near bottom (with 100px margin)
-        let x = (screen_width - overlay_width) / 2;
-        let y = screen_height - overlay_height - 100;
-
-        self.send_command(&format!("SHOW {} {}", x, y))
+        self.send_command("SHOW_CENTERED")
     }
 
     pub fn hide(&self) -> Result<(), String> {
@@ -173,20 +133,9 @@ impl OverlayHelper {
         }
     }
 
-    pub fn set_window_level(&self, level: &str) -> Result<(), String> {
-        let cmd = format!("SET_LEVEL {}", level);
-        self.send_command(&cmd)
-    }
-
     fn send_command(&self, command: &str) -> Result<(), String> {
         let mut stream = UnixStream::connect(SOCKET_PATH)
             .map_err(|e| format!("Failed to connect to helper: {}", e))?;
-
-        // Receive screen dimensions from helper (it sends them immediately on connect)
-        if let Err(e) = Self::receive_dimensions(&mut stream) {
-            // If we can't receive dimensions, log but continue
-            println!("[overlay_helper] Warning: {}", e);
-        }
 
         stream
             .write_all(command.as_bytes())
@@ -210,6 +159,14 @@ impl OverlayHelper {
 
 impl Drop for OverlayHelper {
     fn drop(&mut self) {
+        // Backstop for the graceful `quit()` on app exit: without reaping the
+        // child, a helper that dies first lingers as a zombie.
+        if let Ok(mut process) = self.process.lock() {
+            if let Some(mut child) = process.take() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+        }
         let _ = std::fs::remove_file(SOCKET_PATH);
     }
 }
